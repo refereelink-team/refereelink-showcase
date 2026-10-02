@@ -143,3 +143,74 @@ def test_stop_requests_clip_cancellation_before_waiting(tmp_path):
     service.request_stop()
     assert service.stopped.is_set()
     assert calls == ['cancel']
+
+
+@pytest.mark.parametrize('seekable', [False, True])
+def test_review_video_prefers_existing_derivative_without_mutating_session(tmp_path, seekable):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from showcase.calibration import create_calibration_router
+
+    service = manager(tmp_path)
+    identifier = seed(service)
+    directory = service.root / identifier / 'clips' / 'prepared'
+    directory.mkdir(parents=True)
+    original = directory / 'review.mp4'
+    original.write_bytes(b'original-video')
+    derivative = directory / 'review-seekable.mp4'
+    if seekable:
+        derivative.write_bytes(b'seekable-video')
+    item = service.records[identifier]
+    item.update(clip={'clip_id': 'prepared', 'clip_path': str(original)},
+                labels={'4': 'home_outfield'})
+    service._save(item)
+    bundle = service.root / identifier / 'bundle.npz'
+    bundle.write_bytes(b'practice-bundle')
+    record = service.root / identifier / 'session.json'
+    before_snapshot = service.get(identifier)
+    before_record = record.read_bytes()
+    expected = derivative if seekable else original
+    assert service.video(identifier) == expected
+
+    app = FastAPI()
+    app.include_router(create_calibration_router(service))
+    with TestClient(app) as client:
+        url = f'/api/calibration/sessions/{identifier}/video'
+        response = client.get(url)
+        assert response.status_code == 200
+        assert response.content == expected.read_bytes()
+        assert response.headers['cache-control'] == 'no-cache'
+        response = client.get(url, headers={'Range': 'bytes=0-3'})
+        assert response.status_code == 206
+        assert response.content == expected.read_bytes()[:4]
+        assert response.headers['cache-control'] == 'no-cache'
+    assert service.get(identifier) == before_snapshot
+    assert record.read_bytes() == before_record
+    assert original.read_bytes() == b'original-video'
+    assert bundle.read_bytes() == b'practice-bundle'
+    assert service.settings.bundle.read_bytes() == b'protected-demo'
+    assert service.records[identifier]['clip']['clip_path'] == str(original)
+
+
+def test_source_and_missing_original_video_behavior_is_unchanged(tmp_path):
+    service = manager(tmp_path)
+    identifier = seed(service)
+    source = tmp_path / 'input' / 'calibration.mp4'
+    source.parent.mkdir()
+    source.write_bytes(b'prepared-source')
+    assert service.video(identifier) == source
+    item = service.records[identifier]
+    item['clip'] = {'clip_id': 'missing'}
+    service._save(item)
+    directory = service.root / identifier / 'clips' / 'missing'
+    directory.mkdir(parents=True)
+    (directory / 'review-seekable.mp4').write_bytes(b'derivative-only')
+    before = service.get(identifier)
+    record = (service.root / identifier / 'session.json').read_bytes()
+    with pytest.raises(HTTPException) as error:
+        service.video(identifier)
+    assert error.value.status_code == 409
+    assert error.value.detail == 'Review video is not ready'
+    assert service.get(identifier) == before
+    assert (service.root / identifier / 'session.json').read_bytes() == record
+    assert source.read_bytes() == b'prepared-source'

@@ -6,22 +6,45 @@ a practice result for match tracking, or overwrite the demonstration bundle.
 
 ## Operator flow
 
-1. Preview the original calibration video. Pause and enter the segment's start and
-   end in seconds, or use the current playback position. The native video's
-   duration bounds the selection; the maximum segment length is 60 seconds.
-2. Prepare the players. The backend queues genuine inference on the remote CUDA
-   service. The browser polls the practice session and does not run inference.
-3. Click a player box in the clean review video, or choose a player in the list.
-   The inspector crops a real representative frame from the clean clip. Assign
-   Home, Away, Home goalkeeper, Away goalkeeper, Referee, or Ignore.
-4. Check the result. Counts come from the backend validation report. An
-   insufficient result links back to the related player groups and exact excluded
-   IDs, while keeping all manual labels. Correct a label and check again.
+1. Open Team Calibration. A fresh active session automatically prepares the entire
+   supplied source on the remote CUDA service; there is no segment selection step.
+   Preparation uses `start_ms=0` and the backend source's exact `duration_ms`.
+   Invalid duration or a source longer than the supported 60 seconds produces an
+   explicit error; the frontend never silently truncates media.
+2. Click a player box in the clean review video, or choose a player in the list.
+   The inspector crops a real representative frame. Assign Home, Away, Home
+   goalkeeper, Away goalkeeper, Referee, or Ignore.
+3. Check the result. Counts come from backend validation. An insufficient result
+   links to related player groups and excluded IDs while preserving manual labels.
+
+Progress has three stages: Prepare players, Label players, and Check result.
+Existing sessions restore their clip, labels, and validation instead of preparing
+again. Hidden tabs cannot initiate preparation. A shared in-memory coordinator
+lets StrictMode and remounted workspaces subscribe to a single attempt. A failed
+attempt remains cached until explicit retry; polling does not repeat preparation.
+Retry reads the latest revision first. Server errors can be recovered by the
+confirmed reset action instead of silently discarding restored labels.
 
 The source preview and review clip use native HTML video playback. The review
 clip starts at zero. SVG boxes use the backend's source-pixel coordinates and
 recorded frame timestamps; overlays are suppressed during seeking, at gaps, or
 when video dimensions do not match the metadata.
+
+Presented frame timestamps drive the overlay clock. Seek generations invalidate
+queued callbacks from earlier positions, and paused frames presented before the
+browser clears `seeking` are retained until `seeked`. Browsers without a video
+frame callback use the native media-event fallback.
+
+New clean review clips use H.264 keyframes at intervals of at most half a second
+without changing source frame rate, timestamps, or dimensions. Legacy encoding
+defaults are unchanged. An existing session may provide a verified sibling
+`review-seekable.mp4` for browser playback. The original `review.mp4` must remain
+present, and its recorded path remains the feature-recovery source. The server
+only selects an existing derivative; HTTP requests do not transcode media or
+modify session state. Runtime migration must verify frame count, every frame PTS,
+frame rate, and dimensions before atomically publishing the sibling file. Reload
+the video after migration to avoid combining already buffered original bytes with
+the derivative at the same URL.
 
 ## Quality and preservation
 
@@ -38,10 +61,12 @@ backend session, so progress and confirmed labels can be restored. Revision chec
 prevent an older response from replacing newer labels. Backend availability and
 session retention are prerequisites; reconnecting does not fabricate a result.
 
-**Choose another segment** is an explicit reset of the practice clip, labels, and
-practice result, with a confirmation. The protected demonstration is unaffected.
-A successful practice result remains clearly marked as practice and has no
-activation action.
+**Prepare again** explicitly resets the session's clip, labels, and result after
+confirmation. Preparation starts only after polling confirms the asynchronous
+reset finished and the session is idle and empty. The protected demonstration is
+unaffected. Successful results stay isolated; the UI has no activation action.
+Isolation is enforced by the backend and documented here rather than repeated as
+introductory interface copy.
 
 ## API contract
 
@@ -61,9 +86,10 @@ metadata session_id and clip_id must match before rendering overlays.
 
 Frontend API and presentation tests cover session/revision scoping, late-response
 rejection, retained weak labels, insufficient-result links, recorded-time overlay
-selection, and segment bounds. These checks do not establish rendered browser
+selection, whole-source duration bounds, preparation deduplication, explicit retry,
+and restoration guards. These checks do not establish rendered browser
 behavior or real CUDA model quality. Full acceptance also requires the remote
-backend session tests and a browser pass through selection, preparation, labeling,
+backend session tests and a browser pass through automatic preparation, labeling,
 checking, tab switching, and reset. Python execution remains remote-only.
 
 ```sh
@@ -101,6 +127,13 @@ killed as a Python thread: deployed supervision uses the supplied systemd servic
 with KillMode=control-group and TimeoutStopSec=15 as the process-level fallback.
 Restart marks interrupted operations as recoverable errors and preserves labels.
 
-Frontend checks passed 89 tests, TypeScript and a production build. The final combined
-remote Python suite passed 80 tests, including the real CUDA-health check. New rendered
-browser interaction remains a separate acceptance boundary.
+The initial native calibration implementation passed 89 frontend tests and 80
+remote Python tests, including the real CUDA-health check. These results predate
+the subsequent whole-video and seeking changes.
+
+The current whole-video and seeking changes pass 102 frontend tests, TypeScript,
+formatting, and a production build. Current remote Python validation, migration of
+existing review media, and rendered backward-seek acceptance remain pending because
+the presentation Mac cannot reach the CUDA host through its current Tailscale
+connection. Unit tests do not establish that the runtime media migration or the
+rendered playback fix has been accepted.

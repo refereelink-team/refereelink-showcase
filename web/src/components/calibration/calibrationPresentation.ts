@@ -71,12 +71,59 @@ export function acceptSnapshot(
   if (current && current.id === next.id && next.revision < current.revision) return current;
   return next;
 }
-export function validateSegment(startMs: number, endMs: number, durationMs: number) {
-  if (![startMs, endMs, durationMs].every(Number.isFinite) || startMs < 0 || endMs <= startMs)
-    return '结束时间需要晚于开始时间';
-  if (endMs > durationMs) return '选取时间超出原始视频';
-  if (endMs - startMs > 60000) return '请选取 60 秒以内的片段';
-  return null;
+export function canPrepareFullVideo(snapshot: CalibrationSnapshot, active: boolean) {
+  return (
+    active &&
+    snapshot.status === 'idle' &&
+    !snapshot.session.clip_id &&
+    !snapshot.session.validation_report &&
+    snapshot.session.tracks.length === 0 &&
+    Object.keys(snapshot.labels).length === 0
+  );
+}
+export function fullVideoBounds(snapshot: CalibrationSnapshot): [number, number] {
+  const duration = snapshot.source.duration_ms;
+  if (!Number.isFinite(duration) || duration <= 0) throw new Error('标定视频时长不可用');
+  if (duration > 60000) throw new Error('标定视频超过 60 秒，请提供 60 秒以内的完整视频');
+  return [0, duration];
+}
+export function createFullVideoPreparationCoordinator(
+  prepare: (
+    snapshot: CalibrationSnapshot,
+    startMs: number,
+    endMs: number,
+  ) => Promise<CalibrationSnapshot>,
+) {
+  const attempts = new Map<
+    string,
+    { revision: number; settled: boolean; promise: Promise<CalibrationSnapshot> }
+  >();
+  return {
+    prepare(snapshot: CalibrationSnapshot, retry = false) {
+      const previous = attempts.get(snapshot.id);
+      // Remounts subscribe to the same attempt. A failed request is retried only explicitly.
+      if (previous && (!retry || !previous.settled)) return previous.promise;
+      const attempt = {
+        revision: snapshot.revision,
+        settled: false,
+        promise: null as unknown as Promise<CalibrationSnapshot>,
+      };
+      attempt.promise = Promise.resolve()
+        .then(() => {
+          const [startMs, endMs] = fullVideoBounds(snapshot);
+          return prepare(snapshot, startMs, endMs);
+        })
+        .finally(() => {
+          attempt.settled = true;
+        });
+      attempts.set(snapshot.id, attempt);
+      const promise = attempt.promise;
+      return promise;
+    },
+    clear(id: string) {
+      attempts.delete(id);
+    },
+  };
 }
 export function metadataMatches(metadata: CalibrationMetadata, snapshot: CalibrationSnapshot) {
   return metadata.session_id === snapshot.id && metadata.clip_id === snapshot.session.clip_id;

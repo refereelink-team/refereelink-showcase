@@ -25,13 +25,17 @@ import {
   minimumSamples,
   snapshotIsBusy,
   trackMatches,
-  validateSegment,
+  canPrepareFullVideo,
+  createFullVideoPreparationCoordinator,
 } from './calibrationPresentation';
 import './calibration.css';
 
 const sessionKey = 'refereelink:calibration:practice';
-type Draft = { startMs: number; endMs: number; selected: number | null; filter: CalibrationFilter };
-const emptyDraft: Draft = { startMs: 0, endMs: 0, selected: null, filter: 'unlabelled' };
+type Draft = { selected: number | null; filter: CalibrationFilter };
+const emptyDraft: Draft = { selected: null, filter: 'unlabelled' };
+const fullVideoPreparation = createFullVideoPreparationCoordinator((session, startMs, endMs) =>
+  api.prepareCalibration(session.id, session.revision, startMs, endMs),
+);
 let pendingCreation: Promise<CalibrationSnapshot> | null = null;
 let cachedPracticeId: string | null = null;
 function readStorage(key: string) {
@@ -68,37 +72,29 @@ async function loadPractice() {
 function readDraft(snapshot: CalibrationSnapshot): Draft {
   try {
     const value = JSON.parse(readStorage(sessionKey + ':' + snapshot.id) || 'null');
-    if (
-      value &&
-      Number.isFinite(value.startMs) &&
-      Number.isFinite(value.endMs) &&
-      filterOptions.some((item) => item.value === value.filter)
-    )
-      return { ...value, selected: Number.isInteger(value.selected) ? value.selected : null };
+    if (value && filterOptions.some((item) => item.value === value.filter))
+      return {
+        filter: value.filter,
+        selected: Number.isInteger(value.selected) ? value.selected : null,
+      };
   } catch {
     /* Invalid local view state does not discard remote labels. */
   }
-  return {
-    ...emptyDraft,
-    startMs: snapshot.session.clip_start_ms || 0,
-    endMs: snapshot.session.clip_end_ms || Math.min(30000, snapshot.source.duration_ms),
-  };
+  return { ...emptyDraft };
 }
 const operationTitle: Record<string, string> = {
   prepare: '准备球员',
   label: '保存标注',
   labels: '保存标注',
   validate: '检查结果',
-  reset: '重新选片',
+  reset: '重新准备',
 };
 export default function CalibrationWorkspace({ clip, active }: { clip: Clip; active: boolean }) {
   const [snapshot, setSnapshot] = useState<CalibrationSnapshot | null>(null),
     [metadata, setMetadata] = useState<CalibrationMetadata | null>(null),
     [draft, setDraft] = useState<Draft>(emptyDraft),
-    [view, setView] = useState<'choose' | 'label' | 'result'>('choose'),
+    [view, setView] = useState<'prepare' | 'label' | 'result'>('prepare'),
     [sourcePreview, setSourcePreview] = useState(false),
-    [time, setTime] = useState(0),
-    [sourceDuration, setSourceDuration] = useState(0),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [metadataError, setMetadataError] = useState<string | null>(null),
@@ -124,7 +120,7 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
         apply(value);
         setDraft(readDraft(value));
         setView(
-          value.session.validation_report ? 'result' : value.session.clip_id ? 'label' : 'choose',
+          value.session.validation_report ? 'result' : value.session.clip_id ? 'label' : 'prepare',
         );
       })
       .catch((value) => {
@@ -135,6 +131,21 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!snapshot || !canPrepareFullVideo(snapshot, active)) return;
+    let disposed = false;
+    fullVideoPreparation
+      .prepare(snapshot)
+      .then((next) => {
+        if (!disposed) apply(next);
+      })
+      .catch((value) => {
+        if (!disposed) setError(value instanceof Error ? value.message : '准备球员失败');
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [active, snapshot?.id, snapshot?.revision, snapshot?.status]);
   useEffect(() => {
     if (snapshot) writeStorage(sessionKey + ':' + snapshot.id, JSON.stringify(draft));
   }, [snapshot?.id, draft]);
@@ -198,9 +209,6 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
     : [];
   const report = snapshot?.session.validation_report;
   const ready = Boolean(snapshot?.session.ready && report?.passed);
-  const durationMs =
-    sourceDuration > 0 ? Math.round(sourceDuration * 1000) : snapshot?.source.duration_ms || 0;
-  const segmentError = validateSegment(draft.startMs, draft.endMs, durationMs);
   const labelledCount = snapshot
     ? tracks.filter((track) => {
         const label = labelOf(track, snapshot);
@@ -208,8 +216,7 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
       }).length
     : 0;
   const unlabelled = snapshot ? tracks.filter((track) => !labelOf(track, snapshot)).length : 0;
-  const step =
-    pending && snapshot?.operation === 'prepare' ? 1 : view === 'result' ? 3 : hasClip ? 2 : 0;
+  const step = view === 'prepare' ? 0 : view === 'result' && report ? 2 : hasClip ? 1 : 0;
   const source =
     sourcePreview || !hasClip
       ? snapshot?.source_url || clip.source_url
@@ -226,6 +233,7 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
       if (!mounted.current) return;
       apply(next);
       if (nextView) setView(nextView);
+      return next;
     } catch (value) {
       if (!mounted.current) return;
       setError(value instanceof Error ? value.message : '练习操作未完成');
@@ -247,11 +255,16 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
         ? await api.calibration(current.current.id)
         : await loadPractice();
       if (!mounted.current) return;
-      apply(next);
+      const accepted = apply(next);
+      if (canPrepareFullVideo(accepted, active)) {
+        const prepared = await fullVideoPreparation.prepare(accepted, true);
+        if (mounted.current) apply(prepared);
+      }
+      if (!mounted.current) return;
       if (restoring) {
         setDraft(readDraft(next));
         setView(
-          next.session.validation_report ? 'result' : next.session.clip_id ? 'label' : 'choose',
+          next.session.validation_report ? 'result' : next.session.clip_id ? 'label' : 'prepare',
         );
       }
       setRetry((value) => value + 1);
@@ -287,27 +300,31 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
   }
   async function reset() {
     setResetPrompt(false);
-    await mutate((session) => api.resetCalibration(session.id, session.revision), 'choose');
-    if (current.current && !current.current.session.clip_id) {
+    const next = await mutate(async (session) => {
+      const next = await api.resetCalibration(session.id, session.revision);
+      fullVideoPreparation.clear(session.id);
+      return next;
+    }, 'prepare');
+    if (next) {
       setMetadata(null);
       setSourcePreview(false);
-      setDraft({ ...emptyDraft, endMs: Math.min(30000, current.current.source.duration_ms) });
+      setDraft({ ...emptyDraft });
     }
   }
   return (
     <div className="cal-workspace">
-      <PageHeader title="球队标定" description="选一段清晰画面，告诉系统谁是主队、客队与裁判。">
+      <PageHeader title="球队标定">
         <span className={ready ? 'tracking-state complete' : 'tracking-state'} role="status">
           {pending
             ? snapshot?.status === 'queued'
               ? '等待任务'
               : (operationTitle[snapshot?.operation || ''] || '处理中') + '…'
             : ready
-              ? '本次练习通过'
+              ? '标定通过'
               : hasClip
-                ? '练习标注已保留'
+                ? '标注已保存'
                 : snapshot
-                  ? '选择片段'
+                  ? '准备球员'
                   : '连接后台中…'}
         </span>
         {hasClip || snapshot?.status === 'error' ? (
@@ -316,24 +333,23 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
             disabled={pending}
             onClick={() => setResetPrompt(true)}
           >
-            重新选片
+            重新准备
           </button>
         ) : null}
       </PageHeader>
       <nav className="cal-steps" aria-label="标定步骤">
-        {['选择片段', '准备球员', '标注球员', '检查结果'].map((title, index) => (
+        {['准备球员', '标注球员', '检查结果'].map((title, index) => (
           <button
             key={title}
             aria-current={step === index ? 'step' : undefined}
             className={step === index ? 'current' : index < step ? 'done' : ''}
             disabled={
               pending ||
-              (index === 0 && hasClip) ||
-              index === 1 ||
-              (index === 2 && !alignedMetadata) ||
-              (index === 3 && !report)
+              index === 0 ||
+              (index === 1 && !alignedMetadata) ||
+              (index === 2 && !report)
             }
-            onClick={() => setView(index === 0 ? 'choose' : index === 2 ? 'label' : 'result')}
+            onClick={() => setView(index === 1 ? 'label' : 'result')}
           >
             <span>{index + 1}</span>
             {title}
@@ -342,13 +358,13 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
       </nav>
       <Alert message={error || snapshot?.error || metadataError} onRetry={() => void refresh()} />
       {resetPrompt ? (
-        <div className="cal-reset-prompt" role="alertdialog" aria-label="重新选择标定片段">
-          <p>重新选片会清除本次练习的球员标注。受保护演示不受影响。</p>
+        <div className="cal-reset-prompt" role="alertdialog" aria-label="重新准备标定视频">
+          <p>重新准备会清除当前球员标注。是否继续？</p>
           <button className="button secondary small" onClick={() => setResetPrompt(false)}>
             保留标注
           </button>
           <button className="button primary small" onClick={() => void reset()}>
-            重新选片
+            重新准备
           </button>
         </div>
       ) : null}
@@ -356,14 +372,12 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
         <main className="cal-main">
           <section className="cal-video-card">
             <div className="tracking-card-header">
-              <h2>{sourcePreview || !hasClip ? '原始标定视频' : '本次练习片段'}</h2>
+              <h2>{sourcePreview || !hasClip ? '原始标定视频' : '标定视频'}</h2>
               {hasClip ? (
                 <button className="text-button" onClick={() => setSourcePreview((value) => !value)}>
                   {sourcePreview ? '返回球员标注' : '查看原视频'}
                 </button>
-              ) : (
-                <span className="cal-caption">暂停后选择起止时间</span>
-              )}
+              ) : null}
             </div>
             <CalibrationVideo
               source={source}
@@ -373,20 +387,8 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
               selected={draft.selected}
               videoRef={video}
               active={active}
-              onTime={setTime}
-              onDuration={(seconds) => {
-                if (!hasClip || sourcePreview) {
-                  setSourceDuration(seconds);
-                  if (!hasClip && seconds > 0)
-                    setDraft((value) => ({
-                      ...value,
-                      endMs:
-                        value.endMs <= 0 || value.endMs > seconds * 1000
-                          ? Math.round(seconds * 1000)
-                          : value.endMs,
-                    }));
-                }
-              }}
+              onTime={() => {}}
+              onDuration={() => {}}
               onSelect={(id) => inspect(id, false)}
               onReady={(element) => {
                 if (hasClip && !sourcePreview && pendingSeek.current !== null) {
@@ -399,88 +401,7 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
                 }
               }}
             />
-            {!hasClip ? (
-              <div className="cal-segment">
-                <div className="cal-segment-fields">
-                  <label>
-                    开始 <span>秒</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      max={durationMs / 1000}
-                      value={draft.startMs / 1000}
-                      disabled={pending}
-                      onChange={(event) =>
-                        setDraft((value) => ({
-                          ...value,
-                          startMs: Math.round(Number(event.target.value) * 1000),
-                        }))
-                      }
-                    />
-                    <button
-                      className="text-button"
-                      disabled={pending}
-                      onClick={() =>
-                        setDraft((value) => ({ ...value, startMs: Math.round(time * 1000) }))
-                      }
-                    >
-                      设为当前
-                    </button>
-                  </label>
-                  <label>
-                    结束 <span>秒</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.001"
-                      max={durationMs / 1000}
-                      value={draft.endMs / 1000}
-                      disabled={pending}
-                      onChange={(event) =>
-                        setDraft((value) => ({
-                          ...value,
-                          endMs: Math.round(Number(event.target.value) * 1000),
-                        }))
-                      }
-                    />
-                    <button
-                      className="text-button"
-                      disabled={pending}
-                      onClick={() =>
-                        setDraft((value) => ({ ...value, endMs: Math.round(time * 1000) }))
-                      }
-                    >
-                      设为当前
-                    </button>
-                  </label>
-                </div>
-                <div className="cal-segment-submit">
-                  <span className={segmentError ? 'cal-segment-error' : 'cal-caption'}>
-                    {segmentError ||
-                      `已选 ${((draft.endMs - draft.startMs) / 1000).toFixed(1)} 秒 · 最长 60 秒`}
-                  </span>
-                  <button
-                    className="button primary"
-                    disabled={pending || !snapshot || Boolean(segmentError)}
-                    onClick={() => {
-                      video.current?.pause();
-                      void mutate((session) =>
-                        api.prepareCalibration(
-                          session.id,
-                          session.revision,
-                          draft.startMs,
-                          draft.endMs,
-                        ),
-                      );
-                    }}
-                  >
-                    <Icon name="arrow" />
-                    准备球员
-                  </button>
-                </div>
-              </div>
-            ) : (
+            {hasClip ? (
               <div className="cal-clip-summary">
                 <span>
                   原片 {timecode((snapshot?.session.clip_start_ms || 0) / 1000)} —{' '}
@@ -490,7 +411,7 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
                   {snapshot?.session.observed_frames || 0} 帧 · {tracks.length} 位球员
                 </span>
               </div>
-            )}
+            ) : null}
           </section>
           {pending ? (
             <div className="cal-progress" role="status">
@@ -512,16 +433,12 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
           {view === 'result' && report && snapshot ? (
             <section className={ready ? 'cal-result passed' : 'cal-result'}>
               <div className="cal-result-title">
-                <h2>{ready ? '本次练习已通过' : '再检查几位球员'}</h2>
+                <h2>{ready ? '标定通过' : '再检查几位球员'}</h2>
                 <button className="text-button" onClick={() => setView('label')}>
                   返回标注
                 </button>
               </div>
-              <p>
-                {ready
-                  ? '练习结果已保存，可继续修正标签后重新检查。'
-                  : '人工标签已保留。点击下面的球员组继续补充或修正。'}
-              </p>
+              <p>{ready ? '结果已保存。' : '人工标签已保留。点击下面的球员组继续补充或修正。'}</p>
               <div className="cal-result-counts">
                 <span>
                   主队{' '}
@@ -667,21 +584,14 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
                   </button>
                 ))}
               </div>
-              <p className="cal-label-note">
-                {isWeak(selected, snapshot)
-                  ? '此球员清晰样本较少；人工标签会保留，校验按有效样本计算。'
-                  : '按球衣与角色判断。标注后系统会提取样本，随时可以修正。'}
-              </p>
+              {isWeak(selected, snapshot) ? (
+                <p className="cal-label-note">此球员有效样本较少；标签保留，校验按有效样本计算。</p>
+              ) : null}
             </>
           ) : (
             <div className="cal-inspector-empty">
               <Icon name="file" size={28} />
-              <h2>{hasClip ? '选择一位球员' : '从清晰片段开始'}</h2>
-              <p>
-                {hasClip
-                  ? '点击画面中的跟踪框，或下方球员列表，查看代表画面并标注。'
-                  : '尽量让主客队各有多位球员清楚入镜。准备完成后，再标记球队与角色。'}
-              </p>
+              <h2>{hasClip ? '选择一位球员' : '准备球员中'}</h2>
             </div>
           )}
           {hasClip ? (
@@ -699,14 +609,8 @@ export default function CalibrationWorkspace({ clip, active }: { clip: Clip; act
                 检查结果
                 <Icon name="arrow" />
               </button>
-              <span>建议主队、客队各至少 3 位清晰球员</span>
             </div>
           ) : null}
-          <div className="cal-demo-boundary">
-            <strong>独立标定练习</strong>
-            <p>本次标注与结果仅用于练习，不会启用为比赛标定，也不会覆盖受保护演示。</p>
-            <span>{snapshot?.demo.ready ? '受保护演示已准备' : '受保护演示状态由后台管理'}</span>
-          </div>
         </aside>
       </div>
     </div>

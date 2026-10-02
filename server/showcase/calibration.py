@@ -205,7 +205,9 @@ class CalibrationManager:
             path = self.root / identifier / 'clips' / item['clip']['clip_id'] / 'review.mp4'
         if not path.is_file():
             raise HTTPException(409, 'Review video is not ready')
-        return path
+        # Browser derivatives never replace the clean original used for feature recovery.
+        seekable = path.with_name('review-seekable.mp4')
+        return seekable if seekable.is_file() else path
 
     def _service(self, item):
         identifier = item['id']

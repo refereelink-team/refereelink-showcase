@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import { mediaUrl } from '../../api';
+import { observeCalibrationMedia } from './calibrationMediaClock';
 import type { CalibrationMetadata, CalibrationSnapshot } from '../../types/calibration';
 import {
   calibrationFrameAt,
@@ -53,19 +54,14 @@ export default function CalibrationVideo({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    let disposed = false,
-      handle = 0;
-    const update = (_now: number, frame: VideoFrameCallbackMetadata) => {
-      if (disposed) return;
-      setTime(frame.mediaTime);
-      onTimeRef.current(frame.mediaTime);
-      handle = video.requestVideoFrameCallback(update);
-    };
-    if ('requestVideoFrameCallback' in video) handle = video.requestVideoFrameCallback(update);
-    return () => {
-      disposed = true;
-      if ('cancelVideoFrameCallback' in video) video.cancelVideoFrameCallback(handle);
-    };
+    return observeCalibrationMedia(
+      video,
+      (seconds) => {
+        setTime(seconds);
+        onTimeRef.current(seconds);
+      },
+      setSeeking,
+    );
   }, [source, videoRef]);
   const aligned =
     !metadata || (ready && dimensions[0] === metadata.width && dimensions[1] === metadata.height);
@@ -79,7 +75,7 @@ export default function CalibrationVideo({
         controls
         playsInline
         muted
-        preload="metadata"
+        preload={active ? 'auto' : 'metadata'}
         onLoadedMetadata={(event) => {
           const video = event.currentTarget;
           setDimensions([video.videoWidth || 16, video.videoHeight || 9]);
@@ -90,16 +86,6 @@ export default function CalibrationVideo({
         onDurationChange={(event) => {
           const duration = event.currentTarget.duration;
           if (Number.isFinite(duration)) onDuration(duration);
-        }}
-        onSeeking={() => setSeeking(true)}
-        onSeeked={(event) => {
-          setSeeking(false);
-          setTime(event.currentTarget.currentTime);
-          onTime(event.currentTarget.currentTime);
-        }}
-        onTimeUpdate={(event) => {
-          setTime(event.currentTarget.currentTime);
-          onTime(event.currentTarget.currentTime);
         }}
         onError={() => setError('标定视频暂时不可用，请检查后台连接')}
       />

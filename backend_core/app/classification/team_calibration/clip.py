@@ -422,7 +422,10 @@ class CalibrationClipService:
             source.release()
         if not frames:
             raise RuntimeError("selected clip contains no decodable frames")
-        _make_browser_compatible_video(raw_clip_path, job.clip_path)
+        _make_browser_compatible_video(
+            raw_clip_path, job.clip_path,
+            seek_fps=fps if getattr(config, "clean_calibration_video", False) else None,
+        )
         return {
             "schema_version": 1,
             "clip_id": job.clip_id,
@@ -467,8 +470,27 @@ def validate_clip_range(start_ms: int, end_ms: int, source_duration_ms: int) -> 
         raise ValueError(f"clip length cannot exceed {MAX_CLIP_MS} ms")
 
 
-def _make_browser_compatible_video(raw_path: str, output_path: str) -> None:
-    """Encode the OpenCV intermediate as browser-compatible H.264."""
+def _browser_video_args(
+    ffmpeg: str, raw_path: str, output_path: str, *, seek_fps: float | None = None
+) -> list[str]:
+    """Keep legacy encoding intact; clean review clips get bounded seek intervals."""
+    args = [ffmpeg, "-y", "-i", raw_path, "-c:v", "libx264",
+            "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    if seek_fps is not None:
+        import math
+        if not math.isfinite(seek_fps) or seek_fps <= 0:
+            raise ValueError("Clean review encoding requires a finite positive frame rate")
+        # Floor keeps the keyframe spacing at or below half a second.
+        # No frame-rate or timestamp conversion is applied to the source.
+        interval = max(1, int(seek_fps * 0.5))
+        args += ["-g", str(interval), "-keyint_min", str(interval), "-sc_threshold", "0"]
+    return args + [output_path]
+
+
+def _make_browser_compatible_video(
+    raw_path: str, output_path: str, *, seek_fps: float | None = None
+) -> None:
+    """Encode H.264 with optional short GOPs for native clean-clip seeking."""
 
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -476,21 +498,7 @@ def _make_browser_compatible_video(raw_path: str, output_path: str) -> None:
         return
     try:
         subprocess.run(
-            [
-                ffmpeg,
-                "-y",
-                "-i",
-                raw_path,
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-pix_fmt",
-                "yuv420p",
-                "-movflags",
-                "+faststart",
-                output_path,
-            ],
+            _browser_video_args(ffmpeg, raw_path, output_path, seek_fps=seek_fps),
             check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,

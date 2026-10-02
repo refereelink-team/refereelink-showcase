@@ -64,12 +64,12 @@
     },
     "app/classification/team_calibration/clip.py": {
       "source_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
-      "extracted_sha256": "83a05c1ad2f772ed752b209adf0dfa32b04ab2537e12c5bf9b3b4a43686e5a62",
+      "extracted_sha256": "4e30de635522303c0e5778b27d8b4dc76b9b5565d332dab6e22f30b19c5d5565",
       "modified_for_extraction": false,
       "modified_after_extraction": true,
-      "local_modification": "Opt-in clean review media, verified source FPS, and cooperative cancellation for independent calibration practice sessions.",
+      "local_modification": "Opt-in clean review media, verified source FPS, cooperative cancellation, and half-second keyframe intervals for independent calibration practice sessions; legacy encoder defaults remain unchanged.",
       "canonical_checkout_sha256": "83a05c1ad2f772ed752b209adf0dfa32b04ab2537e12c5bf9b3b4a43686e5a62",
-      "matches_canonical_checkout": true
+      "matches_canonical_checkout": false
     },
     "app/classification/team_calibration/color_features.py": {
       "source_sha256": "563d23ad06b31189df3b417dc2e587f151f5b69d055afd683f10d591925228e6",

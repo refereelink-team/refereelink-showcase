@@ -68,7 +68,8 @@ Extracted Python files retain their original line endings and terminal blank lin
 
 The showcase reuses the extracted team-calibration services with independent session-owned
 paths. A local correction adds an opt-in clean review video, verified source FPS,
-and cooperative cancellation to `app/classification/team_calibration/clip.py`;
+half-second keyframe intervals for responsive seeking, and cooperative cancellation
+to `app/classification/team_calibration/clip.py`;
 legacy callers retain their existing defaults.
 The clean clip prevents rendered IDs and boxes from entering jersey feature extraction.
 

@@ -13,7 +13,9 @@ import {
   metadataMatches,
   snapshotIsBusy,
   trackMatches,
-  validateSegment,
+  canPrepareFullVideo,
+  fullVideoBounds,
+  createFullVideoPreparationCoordinator,
   validCalibrationBox,
 } from '../src/components/calibration/calibrationPresentation.ts';
 
@@ -136,12 +138,18 @@ test('video time chooses only recorded prior frames and rejects gaps and times o
   assert.equal(calibrationFrameAt(metadata, NaN), null);
   assert.equal(calibrationFrameAt({ ...metadata, frames: [] }, 0), null);
 });
-test('native source duration bounds the segment and rejects reversed or overlong selections', () => {
-  assert.equal(validateSegment(0, 19313, 19313), null);
-  assert.match(validateSegment(0, 21451, 19313)!, /超出/);
-  assert.match(validateSegment(500, 500, 19313)!, /晚于/);
-  assert.match(validateSegment(0, 60001, 120000)!, /60/);
-  assert.match(validateSegment(NaN, 1000, 19313)!, /晚于/);
+test('whole source bounds are exact, reject invalid or overlong media, and never truncate', () => {
+  assert.deepEqual(fullVideoBounds(snapshot), [0, 19300]);
+  for (const duration_ms of [0, NaN, Infinity]) {
+    assert.throws(
+      () => fullVideoBounds({ ...snapshot, source: { ...snapshot.source, duration_ms } }),
+      /不可用/,
+    );
+  }
+  assert.throws(
+    () => fullVideoBounds({ ...snapshot, source: { ...snapshot.source, duration_ms: 60001 } }),
+    /60/,
+  );
 });
 test('source-pixel overlays reject broken and off-frame boxes', () => {
   assert.equal(validCalibrationBox([10, 20, 40, 80], 1920, 1080), true);
@@ -165,4 +173,85 @@ test('a successful team check still explains retained excluded labels without im
   );
   assert.equal(labelOf(track, passed), 'home_outfield');
   assert.equal(passed.session.validation_report.goalkeeper_mapping_ready, false);
+});
+
+function emptySession() {
+  return {
+    ...snapshot,
+    operation: null,
+    labels: {},
+    session: {
+      ...snapshot.session,
+      clip_id: null,
+      tracks: [],
+      validation_report: null,
+      ready: false,
+    },
+  };
+}
+test('entry prepares only an active fresh session and preserves every restored session state', () => {
+  const fresh = emptySession();
+  assert.equal(canPrepareFullVideo(fresh, true), true);
+  assert.equal(canPrepareFullVideo(fresh, false), false);
+  for (const status of ['queued', 'running', 'error'])
+    assert.equal(canPrepareFullVideo({ ...fresh, status }, true), false);
+  assert.equal(canPrepareFullVideo(snapshot, true), false);
+  assert.equal(canPrepareFullVideo({ ...fresh, labels: snapshot.labels }, true), false);
+  assert.equal(
+    canPrepareFullVideo({ ...fresh, session: { ...fresh.session, tracks: [track] } }, true),
+    false,
+  );
+  assert.equal(
+    canPrepareFullVideo(
+      {
+        ...fresh,
+        session: { ...fresh.session, validation_report: snapshot.session.validation_report },
+      },
+      true,
+    ),
+    false,
+  );
+});
+test('StrictMode and remount subscribers share one full-video request; pending retry also deduplicates', async () => {
+  let count = 0;
+  let resolve!: (value: CalibrationSnapshot) => void;
+  const coordinator = createFullVideoPreparationCoordinator((value, start, end) => {
+    count++;
+    assert.equal(value.revision, snapshot.revision);
+    assert.deepEqual([start, end], [0, 19300]);
+    return new Promise((done) => {
+      resolve = done;
+    });
+  });
+  const first = coordinator.prepare(emptySession());
+  assert.equal(coordinator.prepare(emptySession()), first);
+  assert.equal(coordinator.prepare(emptySession(), true), first);
+  await Promise.resolve();
+  assert.equal(count, 1);
+  resolve({ ...snapshot, status: 'queued' });
+  await first;
+  assert.equal(coordinator.prepare(emptySession()), first);
+});
+test('failed preparation remains failed through polls and remounts until explicit retry; reset renews once', async () => {
+  let count = 0;
+  const coordinator = createFullVideoPreparationCoordinator(async () => {
+    count++;
+    if (count === 1) throw new Error('connection failed');
+    return { ...snapshot, status: 'queued' };
+  });
+  const first = coordinator.prepare(emptySession());
+  await assert.rejects(first, /connection failed/);
+  await assert.rejects(coordinator.prepare(emptySession()), /connection failed/);
+  await assert.rejects(
+    coordinator.prepare({ ...emptySession(), revision: 9 }),
+    /connection failed/,
+  );
+  assert.equal(count, 1);
+  await coordinator.prepare(emptySession(), true);
+  assert.equal(count, 2);
+  coordinator.clear(snapshot.id);
+  const reset = coordinator.prepare({ ...emptySession(), revision: 10 });
+  assert.equal(coordinator.prepare({ ...emptySession(), revision: 10 }), reset);
+  await reset;
+  assert.equal(count, 3);
 });
