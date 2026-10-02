@@ -86,16 +86,22 @@ export function recordedTrajectory(
   const segments: [number, number][][] = [];
   let segment: [number, number][] = [];
   let previous = -Infinity;
+  let previousEpoch = frames[index].geometry_epoch;
   for (let i = index; i >= 0 && frames[i].source_pts_s >= start; i--) {
     const frame = frames[i];
     const entity = frame.players.find((player, n) => entityKey(player, frame.frame_id, n) === key);
     const point = entity && usableProjection(frame) ? fieldPoint(entity, pitch) : null;
-    if (!point || (previous !== -Infinity && previous - frame.source_pts_s > 0.15)) {
+    if (
+      !point ||
+      frame.geometry_epoch !== previousEpoch ||
+      (previous !== -Infinity && previous - frame.source_pts_s > 0.15)
+    ) {
       if (segment.length > 1) segments.push(segment.reverse());
       segment = [];
     }
     if (point) segment.push(point);
     previous = frame.source_pts_s;
+    previousEpoch = frame.geometry_epoch;
   }
   if (segment.length > 1) segments.push(segment.reverse());
   return segments.reverse();

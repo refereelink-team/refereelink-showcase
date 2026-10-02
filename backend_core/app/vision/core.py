@@ -35,6 +35,7 @@ from app.geometry.pitch_projection import (
 )
 from app.geometry.position_filter import PlayerPositionFilter
 from app.geometry.pitch_lines import PaintLineProjection
+from app.geometry.pitch_registration import FieldLineRegistration
 from app.vision.entities import TrackEntityManager
 
 # Weight given to a newly fitted homography when the camera has not moved.
@@ -231,7 +232,14 @@ class VisionCore:
             PaintCameraMotionEstimator() if self.enable_paint_projection else None
         )
         self._paint_filter = (
-            PlayerPositionFilter(fps=self.fps) if self.enable_paint_projection else None
+            PlayerPositionFilter(fps=self.fps, strict_outliers=True)
+            if self.enable_paint_projection
+            else None
+        )
+        self._paint_registration = (
+            FieldLineRegistration(self._projection_engine.config, self.fps)
+            if self.enable_paint_projection
+            else None
         )
         self._paint_homography = None
         self._paint_accepted_frame = -10000
@@ -460,6 +468,28 @@ class VisionCore:
 
     def _paint_override(self, frame, projection, boxes, frame_index):
         """Overlay independently supported paint without mutating model state."""
+        registration = getattr(self, "_paint_registration", None)
+        if registration is not None:
+            result = registration.update(
+                frame, projection.homography, boxes, frame_index
+            )
+            if result.coordinate_transition:
+                self._paint_filter.reset()
+                self.paint_coordinate_transitions += 1
+            # A rejected registration cannot inherit model-only coordinates.
+            # The transition frame is intentionally blank so the new geometry
+            # is never interpreted as instantaneous player motion.
+            return replace(
+                projection,
+                homography=None if result.coordinate_transition else result.homography,
+                homography_status=(
+                    "unavailable" if result.coordinate_transition else result.status
+                ),
+                fit_source="paint",
+                coordinate_transition=result.coordinate_transition,
+                projection_quality=result.quality,
+                geometry_epoch=result.epoch,
+            )
         previous = self._paint_homography
         motion = (
             self._paint_motion.measure(frame, excluded_boxes=boxes)
@@ -744,10 +774,19 @@ class VisionCore:
                 keys, field_xy, frame_index, box_heights
             )
         if self.enable_paint_projection:
+            if entity_update.rebindings and self._paint_filter is not None:
+                # A tracker identity replacement starts a new motion history;
+                # previously rejected measurements cannot become its origin.
+                for track_id in entity_update.rebindings:
+                    key = entity_update.entity_ids.get(int(track_id), int(track_id))
+                    self._paint_filter.reset_key(key)
             projection = self._paint_override(
                 undistorted_frame, projection, detections.xyxy, frame_index
             )
-            if projection.coordinate_transition:
+            if projection.coordinate_transition or (
+                getattr(self, "_paint_registration", None) is not None
+                and projection.homography is None
+            ):
                 field_xy[:] = np.nan
             elif projection.fit_source == "paint":
                 field_xy = self._field_coordinates(tracked_detections, projection)

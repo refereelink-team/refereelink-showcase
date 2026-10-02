@@ -108,6 +108,8 @@ class FrameState(BaseModel):
     processed_timestamp_ms: float = Field(default_factory=lambda: time.time() * 1000)
     processing_fps: float = 0.0
     homography_status: HomographyStatus = HomographyStatus.UNAVAILABLE
+    projection_quality: Optional[dict[str, Any]] = None
+    geometry_epoch: Optional[int] = Field(default=None, ge=0)
     players: list[PlayerState] = Field(default_factory=list)
     ball: Optional[BallState] = None
     possession_track_id: Optional[int] = None

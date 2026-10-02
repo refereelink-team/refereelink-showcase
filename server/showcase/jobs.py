@@ -140,6 +140,7 @@ class JobManager:
     def _wait(self, process, directory, job):
         deadline = time.monotonic() + self.settings.job_timeout_s
         offset, frames = 0, 0
+        file_identity = None
         expected = self.catalog.clip(job['case_id'])['decoded_frames']
         while process.poll() is None:
             if self.stopped.wait(0.5):
@@ -149,13 +150,21 @@ class JobManager:
             states = directory / 'frame-states.jsonl'
             if states.exists():
                 with states.open('rb') as stream:
+                    stat = os.fstat(stream.fileno())
+                    identity = (stat.st_dev, stat.st_ino)
+                    # Offline refinement publishes a replacement JSONL file.
+                    # Count its frames afresh instead of appending its tail to
+                    # the previously counted causal observations.
+                    if identity != file_identity or stat.st_size < offset:
+                        offset, frames = 0, 0
+                        file_identity = identity
                     stream.seek(offset)
                     new = stream.read()
                     offset = stream.tell()
                     frames += new.count(b'\n')
                 with self.lock:
                     job.update(progress=min(0.95, 0.05 + 0.9 * frames / expected),
-                               processed_frames=frames)
+                               processed_frames=min(frames, expected))
                     self._save(job)
         return process.returncode
 
@@ -257,6 +266,7 @@ class JobManager:
                                     'unknown_team_rate_all_persons', 'track_id_switches',
                                     'homography_available_frame_rate', 'foul_candidates']
                     job.update(status='completed', progress=1.0,
+                               processed_frames=report['processed_frames'],
                                artifacts=[self.catalog.public_artifact(a) for a in artifacts],
                                summary={key: report[key] for key in summary_keys if key in report})
             except Exception as exc:

@@ -48,6 +48,8 @@ class PitchProjectionResult:
     reprojection_error: Optional[float]
     fit_source: str = "model"
     coordinate_transition: bool = False
+    projection_quality: Optional[dict] = None
+    geometry_epoch: Optional[int] = None
 
     @property
     def available(self) -> bool:

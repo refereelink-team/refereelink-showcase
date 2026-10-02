@@ -87,6 +87,8 @@ class TrackingBall(BaseModel):
 class TrackingFrame(BaseModel):
     frame_id: int = Field(ge=1)
     homography_status: Literal['fresh', 'reused', 'stale', 'unavailable']
+    projection_quality: dict[str, object] | None = None
+    geometry_epoch: int | None = Field(default=None, ge=0)
     players: list[TrackingPlayer] = Field(max_length=1000)
     ball: TrackingBall | None = None
 

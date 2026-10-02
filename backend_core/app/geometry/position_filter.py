@@ -20,7 +20,8 @@ import numpy as np
 class _TrackState:
     state: np.ndarray  # [x, y, vx, vy] in cm and cm/s
     covariance: np.ndarray  # 4x4
-    last_frame: int
+    last_frame: int  # Frame represented by the accepted state and covariance.
+    last_observed_frame: int  # Finite measurement seen, including strict rejections.
     outlier_streak: int = 0
 
 
@@ -29,6 +30,8 @@ class PlayerPositionFilter:
 
     Measurement noise scales inversely with the bounding-box height, so far
     players (small boxes, larger pixel-to-metre ratio) are trusted less.
+    ``strict_outliers`` omits rejected positions until a valid measurement or
+    an explicit reset; the default preserves legacy reacquisition behavior.
     """
 
     def __init__(
@@ -46,6 +49,7 @@ class PlayerPositionFilter:
         max_outlier_streak: int = 3,
         max_speed_cm_s: float = 1000.0,
         max_missing_frames: int = 12,
+        strict_outliers: bool = False,
     ) -> None:
         if fps <= 0:
             raise ValueError("fps must be positive")
@@ -61,6 +65,7 @@ class PlayerPositionFilter:
         self.max_outlier_streak = max(int(max_outlier_streak), 1)
         self.max_speed = float(max_speed_cm_s)
         self.max_missing_frames = max(int(max_missing_frames), 1)
+        self.strict_outliers = bool(strict_outliers)
         self._tracks: dict[int, _TrackState] = {}
         self.outliers_rejected = 0
         self.resets = 0
@@ -71,6 +76,10 @@ class PlayerPositionFilter:
 
     def reset(self) -> None:
         self._tracks.clear()
+
+    def reset_key(self, key: int) -> None:
+        """Discard one rebound identity without moving unrelated players."""
+        self._tracks.pop(int(key), None)
 
     def update(
         self,
@@ -111,6 +120,7 @@ class PlayerPositionFilter:
             state=np.array([measurement[0], measurement[1], 0.0, 0.0]),
             covariance=np.diag([variance, variance, velocity_variance, velocity_variance]),
             last_frame=frame_index,
+            last_observed_frame=frame_index,
         )
 
     def _update_one(
@@ -148,10 +158,17 @@ class PlayerPositionFilter:
         sigma = float(np.sqrt(np.trace(innovation_cov) / 2.0))
         gate = min(max(self.gate_min, self.gate_sigma * sigma), self.gate_max)
 
-        track.last_frame = frame_index
+        track.last_observed_frame = frame_index
         if float(np.linalg.norm(innovation)) > gate:
             track.outlier_streak += 1
             self.outliers_rejected += 1
+            if self.strict_outliers:
+                # An unsupported measurement must not move the last accepted
+                # state or inflate its covariance until a bad jump passes the
+                # gate. Geometry transitions and entity rebinds reset the
+                # filter explicitly; persistence alone is not evidence.
+                return np.full(2, np.nan)
+            track.last_frame = frame_index
             if track.outlier_streak >= self.max_outlier_streak:
                 # A persistent jump is real (ID rebind, homography correction).
                 self.resets += 1
@@ -163,6 +180,7 @@ class PlayerPositionFilter:
             return predicted_state[:2].copy()
 
         track.outlier_streak = 0
+        track.last_frame = frame_index
         gain = predicted_cov @ observation.T @ np.linalg.inv(innovation_cov)
         track.state = predicted_state + gain @ innovation
         track.covariance = (np.eye(4) - gain @ observation) @ predicted_cov
@@ -175,7 +193,7 @@ class PlayerPositionFilter:
         stale = [
             key
             for key, track in self._tracks.items()
-            if frame_index - track.last_frame > self.max_missing_frames
+            if frame_index - track.last_observed_frame > self.max_missing_frames
         ]
         for key in stale:
             del self._tracks[key]

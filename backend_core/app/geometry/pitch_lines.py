@@ -44,26 +44,28 @@ class PaintLineProjection:
         seed: Optional[np.ndarray],
         orientation_reference: Optional[np.ndarray] = None,
         excluded_boxes: Optional[np.ndarray] = None,
+        *,
+        paint_mask: Optional[np.ndarray] = None,
+        perspective_families: bool = False,
+        candidate_validator=None,
     ) -> Optional[np.ndarray]:
         height, width = frame.shape[:2]
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         grass = cv2.inRange(hsv, np.array([25, 35, 30]), np.array([95, 255, 255]))
         near_grass = cv2.dilate(grass, np.ones((7, 7), np.uint8))
-        paint = ((hsv[:, :, 1] < 90) & (hsv[:, :, 2] > 145) & (near_grass > 0)).astype(
-            np.uint8
-        )
+        paint = ((hsv[:, :, 1] < 90) & (hsv[:, :, 2] > 145) & (near_grass > 0)).astype(np.uint8)
+        if paint_mask is not None:
+            paint = (paint_mask > 0).astype(np.uint8)
         if excluded_boxes is not None:
             for x1, y1, x2, y2 in excluded_boxes:
-                cv2.rectangle(
-                    paint, (int(x1) - 3, int(y1) - 3), (int(x2) + 3, int(y2) + 3), 0, -1
-                )
+                cv2.rectangle(paint, (int(x1) - 3, int(y1) - 3), (int(x2) + 3, int(y2) + 3), 0, -1)
         raw = cv2.HoughLinesP(
             paint * 255,
             1,
             np.pi / 720,
-            threshold=25,
-            minLineLength=max(45, width * 0.07),
-            maxLineGap=14,
+            threshold=15 if perspective_families else 25,
+            minLineLength=max(25, width * 0.035) if perspective_families else max(45, width * 0.07),
+            maxLineGap=22 if perspective_families else 14,
         )
         if raw is None:
             return None
@@ -87,7 +89,7 @@ class PaintLineProjection:
                     if valid.any()
                     else 0.0
                 )
-            if min(support) < 0.5:
+            if (max(support) if perspective_families else min(support)) < 0.5:
                 continue
             line = np.cross(np.r_[a, 1], np.r_[b, 1])
             line /= np.linalg.norm(line[:2])
@@ -100,19 +102,55 @@ class PaintLineProjection:
                 continue
             lines.append((np.array([a, b]), line, angle, length))
         lines.sort(key=lambda item: -item[3])
+        if perspective_families:
+            merged = []
+            for item in lines:
+                match = next(
+                    (
+                        j
+                        for j, other in enumerate(merged)
+                        if abs(np.sin(item[2] - other[2])) < 0.045
+                        and np.max(np.abs(np.c_[item[0], np.ones(2)] @ other[1])) < 5
+                    ),
+                    None,
+                )
+                if match is None:
+                    merged.append(item)
+                    continue
+                other = merged[match]
+                points = np.concatenate([item[0], other[0]])
+                direction = other[0][1] - other[0][0]
+                coordinates = points @ direction
+                endpoints = points[[np.argmin(coordinates), np.argmax(coordinates)]]
+                merged[match] = (
+                    endpoints,
+                    other[1],
+                    other[2],
+                    float(np.linalg.norm(endpoints[1] - endpoints[0])),
+                )
+            lines = sorted(merged, key=lambda item: -item[3])
         if len(lines) < 4:
             return None
         first = lines[0][2]
-        second = next(
-            (item[2] for item in lines if abs(np.sin(item[2] - first)) > 0.25), None
-        )
+        second = next((item[2] for item in lines if abs(np.sin(item[2] - first)) > 0.25), None)
         if second is None:
             return None
         groups = [
-            [item for item in lines if abs(np.sin(item[2] - angle)) < 0.12][:6]
+            [
+                item
+                for item in lines
+                if abs(np.sin(item[2] - angle)) < (0.25 if perspective_families else 0.12)
+            ][:6]
             for angle in [first, second]
         ]
-        if min(map(len, groups)) < 3:
+        if perspective_families:
+            groups = [[], []]
+            for item in lines:
+                differences = [abs(np.sin(item[2] - angle)) for angle in (first, second)]
+                family = int(np.argmin(differences))
+                if differences[family] < 0.25 and len(groups[family]) < 6:
+                    groups[family].append(item)
+        if min(map(len, groups)) < (2 if perspective_families else 3):
             return None
         observed = np.concatenate(
             [np.linspace(item[0][0], item[0][1], 20) for item in groups[0] + groups[1]]
@@ -133,9 +171,7 @@ class PaintLineProjection:
             c.width,
         ]
         worlds = [
-            np.asarray(
-                [[x, y] for x in (xs[::-1] if reverse else xs) for y in ys], np.float32
-            )
+            np.asarray([[x, y] for x in (xs[::-1] if reverse else xs) for y in ys], np.float32)
             for xs in x_pairs
             for ys in combinations(y_values, 2)
             for reverse in [False, True]
@@ -158,10 +194,7 @@ class PaintLineProjection:
                         continue
                     for world in worlds:
                         matrix = cv2.getPerspectiveTransform(world, image)
-                        if (
-                            np.isfinite(matrix).all()
-                            and abs(np.linalg.det(matrix)) > 1e-8
-                        ):
+                        if np.isfinite(matrix).all() and abs(np.linalg.det(matrix)) > 1e-8:
                             candidates.append(matrix)
         if not candidates:
             return None
@@ -187,14 +220,45 @@ class PaintLineProjection:
         counts = valid.sum(axis=1)
         coarse = (distances * valid).sum(axis=1) / np.maximum(counts, 1)
         coarse[counts < 50] = 100
-        shortlist = np.argsort(coarse)[:40]
+        if perspective_families:
+            # Four intersections can collapse an entire template onto a board.
+            # Require the proposed plane to cover a substantial grass region.
+            grass_points = np.argwhere(grass > 0)[:, ::-1].astype(float)
+            grass_points = grass_points[:: max(1, int(len(grass_points) / 80))]
+            try:
+                inverses = np.linalg.inv(matrices)
+            except np.linalg.LinAlgError:
+                return None
+            mapped = np.einsum(
+                "nij,kj->nki", inverses, np.c_[grass_points, np.ones(len(grass_points))]
+            )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                field = mapped[:, :, :2] / mapped[:, :, 2:3]
+            coverage = (
+                (field[:, :, 0] >= 0)
+                & (field[:, :, 0] <= c.length)
+                & (field[:, :, 1] >= 0)
+                & (field[:, :, 1] <= c.width)
+            ).mean(axis=1)
+            coarse[coverage < 0.35] = 100
+        shortlist = np.argsort(coarse)[: 200 if perspective_families else 40]
         best_score = 100.0
         best = None
         for index in shortlist:
             matrix = matrices[index]
-            edges = cv2.perspectiveTransform(
-                self.edges.reshape(-1, 1, 2), matrix
-            ).reshape(-1, 2, 2)
+            if candidate_validator is not None:
+                try:
+                    validation = candidate_validator(np.linalg.inv(matrix))
+                except np.linalg.LinAlgError:
+                    continue
+                if (
+                    validation is not None
+                    and validation["accepted"]
+                    and validation["score"] < best_score
+                ):
+                    best_score, best = validation["score"], matrix
+                continue
+            edges = cv2.perspectiveTransform(self.edges.reshape(-1, 1, 2), matrix).reshape(-1, 2, 2)
             start = edges[:, 0]
             vector = edges[:, 1] - start
             t = np.clip(
@@ -237,16 +301,14 @@ class PaintLineProjection:
                     and np.linalg.norm(np.ptp(visible_probes, axis=0)) >= 35
                 )
                 support.append(
-                    enough
-                    and float(np.mean(self._bilinear(distance, visible_probes) < 5))
-                    >= 0.55
+                    enough and float(np.mean(self._bilinear(distance, visible_probes) < 5)) >= 0.55
                 )
             if not (support[0] and support[1] and support[2] and support[3]):
                 continue
             score = float(coarse[index] + np.mean(np.minimum(errors, 15)))
             if score < best_score:
                 best_score, best = score, matrix
-        if best is None or best_score > 8.0:
+        if best is None or best_score > (15.0 if candidate_validator is not None else 8.0):
             return None
         try:
             image_to_world = np.linalg.inv(best)
@@ -256,9 +318,7 @@ class PaintLineProjection:
         # using the previous accepted transform, never the held-out landmarks.
         reference = orientation_reference if orientation_reference is not None else seed
         if reference is not None:
-            target = cv2.perspectiveTransform(
-                observed.reshape(-1, 1, 2), reference
-            ).reshape(-1, 2)
+            target = cv2.perspectiveTransform(observed.reshape(-1, 1, 2), reference).reshape(-1, 2)
             options = []
             for x_flip in [False, True]:
                 for y_flip in [False, True]:
@@ -271,9 +331,9 @@ class PaintLineProjection:
                         dtype=float,
                     )
                     option = mirror @ image_to_world
-                    mapped = cv2.perspectiveTransform(
-                        observed.reshape(-1, 1, 2), option
-                    ).reshape(-1, 2)
+                    mapped = cv2.perspectiveTransform(observed.reshape(-1, 1, 2), option).reshape(
+                        -1, 2
+                    )
                     options.append(
                         (
                             float(np.median(np.linalg.norm(mapped - target, axis=1))),

@@ -684,6 +684,8 @@ class InferencePipeline:
             capture_timestamp_ms=capture_timestamp_ms,
             processing_fps=current_fps,
             homography_status=_map_homography_status(projection.homography_status),
+            projection_quality=getattr(projection, "projection_quality", None),
+            geometry_epoch=getattr(projection, "geometry_epoch", None),
             players=player_states,
             ball=ball_state,
             possession_track_id=self._find_possession_track_id(player_states, ball_state),

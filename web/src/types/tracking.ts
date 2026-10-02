@@ -31,6 +31,8 @@ export interface TrackingFrame {
   frame_id: number;
   source_pts_s: number;
   homography_status: string;
+  geometry_epoch?: number | null;
+  projection_quality?: Record<string, unknown> | null;
   players: TrackedEntity[];
   ball: TrackedBall | null;
 }

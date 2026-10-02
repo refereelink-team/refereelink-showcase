@@ -260,3 +260,13 @@ test('a completed immutable result can recover from an initial case lookup failu
   assert.equal(restored.latest_result, result);
   assert.equal(restored.active_job, null);
 });
+
+test('trajectory never connects separately registered coordinate epochs', () => {
+  const frames = [frame(0), frame(0.04), frame(0.08), frame(0.12)];
+  frames[0].geometry_epoch = frames[1].geometry_epoch = 1;
+  frames[2].geometry_epoch = frames[3].geometry_epoch = 2;
+  assert.deepEqual(recordedTrajectory(frames, 3, 'track:4', pitch), [
+    [[20, 10], [20, 10]],
+    [[20, 10], [20, 10]],
+  ]);
+});

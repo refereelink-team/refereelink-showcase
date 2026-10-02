@@ -63,3 +63,15 @@ Each API record was compared with its actual pipeline observation and decoded so
 The subsequent calibration migration and projection corrections are documented in
 [CALIBRATION.md](CALIBRATION.md) and [PROJECTION_CORRECTIONS.md](PROJECTION_CORRECTIONS.md).
 The initial availability figures above do not establish independent spatial accuracy.
+
+## Field-marking sequence refinement
+
+Verified match tracking runs now validate pitch paint and refine each continuous
+camera shot using independently supported field anchors. The offline pass may
+use later frames from that same shot; it does not apply to calibration or unknown
+sources. Frame responses optionally include `projection_quality` and
+`geometry_epoch`. Older records remain compatible. Recent trajectories split at
+geometry epochs as well as missing coordinates, so registration corrections
+cannot appear as instantaneous player movement. See
+[PROJECTION_CORRECTIONS.md](PROJECTION_CORRECTIONS.md) for the estimator,
+reproducibility artifacts and current acceptance limits.

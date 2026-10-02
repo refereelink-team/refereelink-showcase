@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timezone
 import gc
@@ -20,6 +21,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 
 import cv2
@@ -38,6 +40,8 @@ from app.pipeline.source import LocalFileSource
 from app.state.store import StateStore
 from tools.render_diagnostic_video import _make_contact_sheet, _render_panel
 from app.config.pitch import PITCH_PROFILE_IDS, build_pitch_profile
+from app.geometry.sequence_refinement import refine_sequence
+from app.state.models import FrameState
 
 MODES = ("foul_only", "projection_only", "combined")
 VIDEOS = {
@@ -64,6 +68,112 @@ def write_json(path: Path, value: object) -> None:
 
 def line_json(handle, value: object) -> None:
     handle.write(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n")
+
+
+def _atomic_bytes(path: Path, payload: bytes) -> None:
+    """Publish one completed artifact without exposing a partial JSONL file."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".sequence-", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _jsonl_bytes(records) -> bytes:
+    def numpy_value(value):
+        if isinstance(value, np.ndarray):
+            return value.tolist()
+        if isinstance(value, np.generic):
+            return value.item()
+        raise TypeError(f"Unsupported sequence JSON value: {type(value).__name__}")
+
+    return "".join(json.dumps(record, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+                              default=numpy_value)
+                   + "\n" for record in records).encode()
+
+
+def _rerender_sequence(input_path, states, video_raw, pitch_config, fps):
+    """Render refined records against the original decoder frames, without inference."""
+    capture = cv2.VideoCapture(str(input_path))
+    temporary = video_raw.with_name(".sequence-annotated.mp4")
+    writer = None
+    held_event, hold_until = None, -1
+    try:
+        if not capture.isOpened():
+            raise RuntimeError("Cannot reopen original sequence media")
+        for record in states:
+            ok, frame = capture.read()
+            if not ok:
+                raise RuntimeError("Original sequence media ended before refined records")
+            state = FrameState.model_validate(record)
+            rendered, held_event, hold_until = render(
+                frame, state, "projection_only", None, held_event, hold_until, pitch_config,
+            )
+            if writer is None:
+                writer = cv2.VideoWriter(str(temporary), cv2.VideoWriter_fourcc(*"mp4v"), fps,
+                                         (rendered.shape[1], rendered.shape[0]))
+                if not writer.isOpened():
+                    raise RuntimeError("Cannot open refined sequence video writer")
+            writer.write(rendered)
+        if capture.read()[0]:
+            raise RuntimeError("Original sequence media contains unrepresented frames")
+        if writer is None:
+            raise RuntimeError("Refined sequence has no source frames")
+        writer.release()
+        writer = None
+        os.replace(temporary, video_raw)
+    finally:
+        capture.release()
+        if writer is not None:
+            writer.release()
+        temporary.unlink(missing_ok=True)
+
+
+def _offline_refine(output, input_path, video_raw, history, metadata, config, fps, *, reuse_causal=False):
+    """Keep causal artifacts verbatim and publish source-aligned offline geometry."""
+    started = time.perf_counter()
+    states_path, metrics_path = output / "frame-states.jsonl", output / "frame-metrics.jsonl"
+    causal_states_path, causal_metrics_path = output / "causal-frame-states.jsonl", output / "causal-frame-metrics.jsonl"
+    causal_states = (causal_states_path if reuse_causal else states_path).read_bytes()
+    causal_metrics = (causal_metrics_path if reuse_causal else metrics_path).read_bytes()
+    _atomic_bytes(output / "causal-registration-history.jsonl", _jsonl_bytes(history))
+    states = [json.loads(line) for line in causal_states.splitlines()]
+    metrics = [json.loads(line) for line in causal_metrics.splitlines()]
+    from app.geometry.pitch_registration import prepare_offline_corrector
+    corrector = prepare_offline_corrector(input_path, history, config)
+    result = refine_sequence(states, history, metadata["decoded_timestamps_ms"], config, fps,
+                             (metadata["height"], metadata["width"]), corrector=corrector)
+    if len(metrics) != len(result.frame_states):
+        raise ValueError("Sequence timing records are incomplete")
+    for metric, state in zip(metrics, result.frame_states):
+        if metric["frame_id"] != state["frame_id"]:
+            raise ValueError("Sequence timing frame identities do not align")
+        metric.update(homography_status=state["homography_status"],
+                      projection_quality=state["projection_quality"], geometry_epoch=state["geometry_epoch"])
+    # Validate JSON before changing any artifact, then finish the new video.
+    state_bytes, metric_bytes = _jsonl_bytes(result.frame_states), _jsonl_bytes(metrics)
+    homography_bytes = _jsonl_bytes([
+        {"frame_id": state["frame_id"], "source_pts_ms": metadata["decoded_timestamps_ms"][index],
+         "homography": None if matrix is None else matrix.tolist(),
+         "quality": state["projection_quality"], "epoch": state["geometry_epoch"]}
+        for index, (state, matrix) in enumerate(zip(result.frame_states, result.homographies))
+    ])
+    _rerender_sequence(input_path, result.frame_states, video_raw, config, fps)
+    if not reuse_causal:
+        _atomic_bytes(causal_states_path, causal_states)
+        _atomic_bytes(causal_metrics_path, causal_metrics)
+    _atomic_bytes(states_path, state_bytes)
+    _atomic_bytes(metrics_path, metric_bytes)
+    _atomic_bytes(output / "sequence-homographies.jsonl", homography_bytes)
+    result.summary["postprocess_seconds"] = time.perf_counter() - started
+    result.summary["paint_corrector"] = deepcopy(getattr(corrector, "summary", {}))
+    return result
 
 
 def source_metadata(path: Path) -> dict:
@@ -290,6 +400,9 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         foul_confidence_threshold=args.threshold, inference_backend="pytorch",
         frame_sink=lambda frame, state: captured.update(frame=frame))
     pipeline._load_models()
+    sequence_enabled = pitch_profile_id == "source-informed105" and mode == "projection_only"
+    if sequence_enabled:
+        pipeline._vision_core._paint_registration.record_history = True
     assert pipeline._vision_core.enable_pitch == (mode != "foul_only")
     if mode != "projection_only":
         assert pipeline._foul_detector is detector and predictor is not None
@@ -302,6 +415,9 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     frames = 0
     latencies = []
     roles, teams, statuses, rejection_reasons, track_statuses = Counter(), Counter(), Counter(), Counter(), Counter()
+    registration_reasons, registration_sources, geometry_epochs = Counter(), Counter(), Counter()
+    registration_quality_frames = geometry_epoch_changes = 0
+    previous_geometry_epoch = None
     players_total = projected = unknown_roles = unknown_teams = candidate_count = empty_frames = missing_observations = 0
     short_gap_missing_track_frames = observed_active_track_frames = 0
     held_event, hold_until = None, -1
@@ -330,6 +446,22 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
             short_gap_missing_track_frames += short_gaps
             observed_active_track_frames += short_gaps + len(state.players)
             statuses[state.homography_status.value] += 1
+            if state.projection_quality is not None:
+                registration_quality_frames += 1
+                reason = state.projection_quality.get("reason")
+                if isinstance(reason, str):
+                    registration_reasons[reason] += 1
+                registration_source = state.projection_quality.get("source")
+                if isinstance(registration_source, str):
+                    registration_sources[registration_source] += 1
+            if state.geometry_epoch is not None:
+                geometry_epochs[state.geometry_epoch] += 1
+                if (
+                    previous_geometry_epoch is not None
+                    and state.geometry_epoch != previous_geometry_epoch
+                ):
+                    geometry_epoch_changes += 1
+                previous_geometry_epoch = state.geometry_epoch
             for player in state.players:
                 roles[player.role.value] += 1
                 teams[player.team.value] += 1
@@ -345,7 +477,7 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
                     candidate_count += 1
                     line_json(events_log, {"media_pts_seconds": meta["decoded_timestamps_ms"][frames - 1] / 1000, "source_frame_id": state.frame_id, "event": event.model_dump(mode="json")})
             line_json(frames_log, state.model_dump(mode="json"))
-            line_json(timings_log, {"frame_id": state.frame_id, "source_pts_ms": meta["decoded_timestamps_ms"][frames - 1], "synchronized_pipeline_latency_ms": latency, "processed_timestamp_ms": state.processed_timestamp_ms, "read_to_processed_ms": state.processed_timestamp_ms - state.capture_timestamp_ms, "homography_status": state.homography_status.value, "tracked_persons": len(state.players), "short_gap_missing_tracks": short_gaps})
+            line_json(timings_log, {"frame_id": state.frame_id, "source_pts_ms": meta["decoded_timestamps_ms"][frames - 1], "synchronized_pipeline_latency_ms": latency, "processed_timestamp_ms": state.processed_timestamp_ms, "read_to_processed_ms": state.processed_timestamp_ms - state.capture_timestamp_ms, "homography_status": state.homography_status.value, "projection_quality": state.projection_quality, "geometry_epoch": state.geometry_epoch, "tracked_persons": len(state.players), "short_gap_missing_tracks": short_gaps})
             final, held_event, hold_until = render(captured["frame"], state, mode, predictor.last_record if predictor else None, held_event, hold_until, pitch_config)
             writer.write(final)
             if frames % 120 == 0:
@@ -367,6 +499,28 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     else:
         assert pipeline._vision_core.pitch_detection_count > 0
     core = pipeline._vision_core
+    sequence_summary = {"enabled": False}
+    if sequence_enabled:
+        causal_counts = {
+            "projected_player_observations": projected,
+            "homography_status_frames": dict(statuses),
+            "source_frames": dict(registration_sources),
+            "coordinate_transition_frames": core.paint_coordinate_transitions,
+            "elapsed_seconds": elapsed,
+        }
+        refined = _offline_refine(output, input_path, video_raw, core._paint_registration.records,
+                                  meta, pitch_config, source.fps)
+        sequence_summary = {**refined.summary, "causal_counts": causal_counts}
+        projected = refined.summary["projected_player_observations"]
+        statuses = Counter(state["homography_status"] for state in refined.frame_states)
+        registration_quality_frames = len(refined.frame_states)
+        registration_reasons = Counter(state["projection_quality"]["reason"]
+                                       for state in refined.frame_states if state["projection_quality"]["reason"])
+        registration_sources = Counter(state["projection_quality"]["source"] for state in refined.frame_states)
+        geometry_epochs = Counter(state["geometry_epoch"] for state in refined.frame_states)
+        geometry_epoch_changes = sum(a["geometry_epoch"] != b["geometry_epoch"]
+                                     for a, b in zip(refined.frame_states, refined.frame_states[1:]))
+        elapsed = time.perf_counter() - started
     summary = {
         "status": "complete", "input": input_path.name, "mode": mode,
         "started_at": job_started_at, "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -394,6 +548,15 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         "unknown_role_rate": unknown_roles / max(1, players_total), "unknown_team_rate_all_persons": unknown_teams / max(1, players_total),
         "projected_player_observations": projected, "projected_player_rate": projected / max(1, players_total),
         "homography_status_frames": dict(statuses), "homography_available_frame_rate": (statuses["fresh"] + statuses["reused"]) / frames,
+        "projection_registration": {
+            "quality_frame_count": registration_quality_frames,
+            "quality_reason_frames": dict(registration_reasons),
+            "source_frames": dict(registration_sources),
+            "geometry_epoch_frames": dict(geometry_epochs),
+            "geometry_epoch_change_frames": geometry_epoch_changes,
+            "coordinate_transition_frames": sequence_summary.get("coordinate_transition_frame_count", 0) if sequence_enabled else core.paint_coordinate_transitions,
+        },
+        "sequence_refinement": sequence_summary,
         "track_statuses": dict(track_statuses), "non_detected_observation_rate": missing_observations / max(1, players_total), "team_rejection_reasons": dict(rejection_reasons),
         "short_gap_missing_track_frames": short_gap_missing_track_frames,
         "observed_active_track_frames": observed_active_track_frames,
@@ -415,9 +578,22 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     assert n_video == frames
     video_raw.unlink()
     _make_contact_sheet(final_video, output / "contact-sheet.jpg", count=6)
+    if sequence_enabled:
+        elapsed = time.perf_counter() - started
+        summary["completed_at"] = datetime.now(timezone.utc).isoformat()
+        summary["elapsed_seconds_excluding_model_load"] = elapsed
+        summary["fps_including_render_and_json"] = frames / elapsed
+        summary["sequence_refinement"]["timing_scope"] = "pipeline, offline refinement, JSON, rendering, encoding, contact sheet"
     line_json_file = output / "track-lifecycle.json"
     write_json(line_json_file, core.track_lifecycle_events)
     summary["artifacts"] = {"video": str(final_video), "video_sha256": sha256(final_video), "states": str(output / "frame-states.jsonl"), "foul_windows": str(output / "foul-windows.jsonl"), "frame_metrics": str(output / "frame-metrics.jsonl"), "candidate_events": str(output / "candidate-events.jsonl"), "contact_sheet": str(output / "contact-sheet.jpg")}
+    if sequence_enabled:
+        summary["artifacts"].update(causal_states=str(output / "causal-frame-states.jsonl"),
+                                    causal_frame_metrics=str(output / "causal-frame-metrics.jsonl"),
+                                    sequence_homographies=str(output / "sequence-homographies.jsonl"),
+                                    sequence_homographies_sha256=sha256(output / "sequence-homographies.jsonl"),
+                                    causal_registration_history=str(output / "causal-registration-history.jsonl"),
+                                    causal_registration_history_sha256=sha256(output / "causal-registration-history.jsonl"))
     write_json(output / "report.json", summary)
     print(json.dumps({"status": "complete", "input": input_path.name, "mode": mode, "frames": frames, "fps": frames / elapsed, "windows": summary["foul_actual_forward_windows"], "candidates": candidate_count}), flush=True)
     del predictor, detector, pipeline, core

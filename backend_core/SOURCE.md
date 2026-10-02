@@ -87,3 +87,11 @@ although the file bytes have changed. Pipeline and renderer extensions explicitl
 pass the selected configuration. Default and unknown inputs retain legacy
 behavior. See [Projection corrections](../docs/PROJECTION_CORRECTIONS.md) for
 measurements and limitations.
+
+`app/geometry/pitch_registration.py` and `app/geometry/sequence_refinement.py`
+are new local modules with null upstream source identities and separately
+recorded extracted hashes. They implement source-isolated paint validation and
+explicit offline shot refinement. The strict-filter and selected-identity reset
+extensions preserve legacy defaults. The manifest currently tracks 60 Python
+files and covers their internal imports; SciPy is a declared inference dependency.
+Causal runtime records and refined sequence records are separate artifacts.
