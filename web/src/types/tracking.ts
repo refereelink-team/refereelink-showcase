@@ -70,7 +70,13 @@ export interface TrackingResult {
     unknown_role_rate: number | null;
     unknown_team_rate: number | null;
   };
-  provenance: { device: 'cuda'; recorded_at: string | number | null; live: false };
+  provenance: {
+    device: 'cuda';
+    recorded_at: string | number | null;
+    live: false;
+    pitch_profile_id?: string;
+    paint_enabled?: boolean;
+  };
   job_id: string | null;
 }
 export interface TrackingCase {

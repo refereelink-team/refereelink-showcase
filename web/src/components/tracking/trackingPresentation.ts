@@ -57,6 +57,16 @@ export function fieldPoint(
   if (x === null || y === null || !Number.isFinite(x) || !Number.isFinite(y)) return null;
   return x >= 0 && y >= 0 && x <= pitch.length_m && y <= pitch.width_m ? [x, y] : null;
 }
+/** Align the fixed paint-registration axes with the footage without changing observations. */
+export function pitchDisplayPoint(
+  point: [number, number],
+  result: Pick<TrackingResult, 'pitch' | 'provenance'>,
+): [number, number] {
+  const reverseX =
+    result.provenance.pitch_profile_id === 'source-informed105' &&
+    result.provenance.paint_enabled === true;
+  return [reverseX ? result.pitch.length_m - point[0] : point[0], point[1]];
+}
 export function usableProjection(frame: TrackingFrame | null) {
   return Boolean(frame && ['fresh', 'reused'].includes(frame.homography_status));
 }

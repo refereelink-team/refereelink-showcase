@@ -6,6 +6,7 @@ import {
   entityKey,
   fieldPoint,
   frameIndexAtTime,
+  pitchDisplayPoint,
   recordedTrajectory,
   validBox,
   usableProjection,
@@ -112,6 +113,66 @@ test('projection uses response pitch units and rejects unknown and off-field val
   assert.equal(fieldPoint(player({ field_x: 121 }), pitch), null);
   assert.equal(fieldPoint(player({ field_y: null }), pitch), null);
   assert.equal(fieldPoint(player({ field_x: NaN }), pitch), null);
+});
+const paintResult: TrackingResult = {
+  ...result,
+  pitch: { ...pitch, length_m: 105, width_m: 68 },
+  provenance: {
+    ...result.provenance,
+    pitch_profile_id: 'source-informed105',
+    paint_enabled: true,
+  },
+};
+test('paint-registration pitch display matches footage halves without changing world coordinates', () => {
+  const leftGoal: [number, number] = [105, 34];
+  assert.deepEqual(pitchDisplayPoint(leftGoal, paintResult), [0, 34]);
+  assert.deepEqual(pitchDisplayPoint([0, 34], paintResult), [105, 34]);
+  assert.deepEqual(pitchDisplayPoint([52.5, 34], paintResult), [52.5, 34]);
+  assert.deepEqual(leftGoal, [105, 34]);
+  const a: [number, number] = [95, 10],
+    b: [number, number] = [91, 13];
+  const displayedA = pitchDisplayPoint(a, paintResult),
+    displayedB = pitchDisplayPoint(b, paintResult);
+  assert.equal(Math.hypot(displayedB[0] - displayedA[0], displayedB[1] - displayedA[1]), 5);
+});
+test('legacy, unregistered and unknown profiles retain their recorded display orientation', () => {
+  const point: [number, number] = [20, 10];
+  for (const provenance of [
+    result.provenance,
+    { ...paintResult.provenance, paint_enabled: false },
+    { ...paintResult.provenance, pitch_profile_id: 'legacy' },
+    { ...paintResult.provenance, pitch_profile_id: 'unknown' },
+  ]) {
+    assert.deepEqual(pitchDisplayPoint(point, { ...paintResult, provenance }), point);
+  }
+});
+test('players, ball and recorded trails share one display transform and preserve epoch gaps', () => {
+  const frames = [frame(0), frame(0.04), frame(0.08), frame(0.12)];
+  frames[0].geometry_epoch = frames[1].geometry_epoch = 1;
+  frames[2].geometry_epoch = frames[3].geometry_epoch = 2;
+  frames.forEach((value, n) => {
+    value.players[0].field_x = 95 - n;
+  });
+  const saved = JSON.stringify(frames);
+  const segments = recordedTrajectory(frames, 3, 'track:4', paintResult.pitch);
+  assert.deepEqual(
+    segments.map((points) => points.map((point) => pitchDisplayPoint(point, paintResult))),
+    [
+      [
+        [10, 10],
+        [11, 10],
+      ],
+      [
+        [12, 10],
+        [13, 10],
+      ],
+    ],
+  );
+  const playerPoint = fieldPoint(frames[3].players[0], paintResult.pitch)!;
+  const ballPoint = fieldPoint({ field_x: 92, field_y: 10 }, paintResult.pitch)!;
+  assert.deepEqual(pitchDisplayPoint(playerPoint, paintResult), [13, 10]);
+  assert.deepEqual(pitchDisplayPoint(ballPoint, paintResult), [13, 10]);
+  assert.equal(JSON.stringify(frames), saved);
 });
 test('source-pixel boxes stay inside the original video and reject invalid geometry', () => {
   assert.equal(validBox([10, 10, 20, 20], 1920, 1080), true);
@@ -266,7 +327,13 @@ test('trajectory never connects separately registered coordinate epochs', () => 
   frames[0].geometry_epoch = frames[1].geometry_epoch = 1;
   frames[2].geometry_epoch = frames[3].geometry_epoch = 2;
   assert.deepEqual(recordedTrajectory(frames, 3, 'track:4', pitch), [
-    [[20, 10], [20, 10]],
-    [[20, 10], [20, 10]],
+    [
+      [20, 10],
+      [20, 10],
+    ],
+    [
+      [20, 10],
+      [20, 10],
+    ],
   ]);
 });

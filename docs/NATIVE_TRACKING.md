@@ -34,6 +34,17 @@ Detection boxes use the original image pixels and the result's original width/he
 
 Field coordinates in the extracted pipeline are centimetres. The API converts field positions and velocities to metres once. Every immutable result supplies the geometry that actually produced its coordinates. Default, unknown, and calibration sources retain the legacy 120 × 70 m template and 20.15 m penalty-area depth. The configured match video opts into the source-informed 105 × 68 m template, 16.5 m penalty-area depth, and independent paint registration only when its actual SHA-256 matches catalog metadata. New reports record the profile, paint flag, and geometry; older reports without geometry retain legacy dimensions. Overall dimensions are configured assumptions, not independently surveyed stadium measurements. The frontend does not infer dimensions, clamp invalid coordinates into the field, interpolate new tracks, or alter saved observations.
 
+## Display orientation
+
+The source-informed paint-registration profile fixes its longitudinal world axis
+opposite to the footage's horizontal screen axis. The native pitch view therefore
+renders `display_x = length_m - field_x` for these registered results. Players,
+the ball, and recorded trajectories use the same display transform; target labels
+remain readable. This presentation convention does not change saved coordinates,
+velocities, distances, team identities, or defending ends. The inspector continues
+to show recorded world coordinates. Legacy results and profiles without paint
+registration keep their original display orientation.
+
 ## Verification boundaries
 
 Frontend checks may run on macOS:

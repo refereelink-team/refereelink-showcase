@@ -9,6 +9,7 @@ import {
   entityLabel,
   fieldPoint,
   frameIndexAtTime,
+  pitchDisplayPoint,
   recordedTrajectory,
   roleLabel,
   teamLabel,
@@ -135,17 +136,21 @@ export default function TrackingScene({
   const target = targets.find((item) => item.key === selected);
   const trajectories =
     result && selected && showTrails
-      ? recordedTrajectory(frames, index, selected, result.pitch)
+      ? recordedTrajectory(frames, index, selected, result.pitch).map((points) =>
+          points.map((point) => pitchDisplayPoint(point, result)),
+        )
       : [];
   const projected = usableProjection(frame);
   const projectionCount =
     result && projected
       ? targets.filter(({ entity }) => fieldPoint(entity, result.pitch)).length
       : 0;
-  const ballPoint =
+  const recordedBallPoint =
     result && projected && frame?.ball && ['fresh', 'predicted'].includes(frame.ball.status)
       ? fieldPoint(frame.ball, result.pitch)
       : null;
+  const ballPoint =
+    result && recordedBallPoint ? pitchDisplayPoint(recordedBallPoint, result) : null;
   async function togglePlay() {
     const element = video.current;
     if (!element) return;
@@ -406,8 +411,9 @@ export default function TrackingScene({
                 />
               ))}
               {targets.map(({ entity, key }) => {
-                const point = projected ? fieldPoint(entity, result.pitch) : null;
-                if (!point) return null;
+                const recordedPoint = projected ? fieldPoint(entity, result.pitch) : null;
+                if (!recordedPoint) return null;
+                const point = pitchDisplayPoint(recordedPoint, result);
                 return (
                   <g
                     key={key}
