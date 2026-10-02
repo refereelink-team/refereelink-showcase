@@ -1,6 +1,6 @@
 # Install on the remote CUDA host. The torch wheel must support its GPU.
 # These direct versions match the actual 2026-10-02 CUDA validation environment.
-torch==2.13.0
+torch==2.14.0
 torchvision==0.28.0
 ultralytics==8.4.95
 supervision==0.29.1
