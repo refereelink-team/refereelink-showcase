@@ -127,6 +127,21 @@ export function temporalFocusStrength(
   return gate * (bin ? 0.65 + 0.35 * clamp(bin.score, 0, 1) : 0.82);
 }
 
+export function loadedPausedMediaTime(media: {
+  paused: boolean;
+  seeking: boolean;
+  readyState: number;
+  currentTime: number;
+}): number | null {
+  return media.paused &&
+    !media.seeking &&
+    media.readyState >= 2 &&
+    Number.isFinite(media.currentTime) &&
+    media.currentTime >= 0
+    ? media.currentTime
+    : null;
+}
+
 export function containedMediaBounds(
   containerWidth: number,
   containerHeight: number,
@@ -145,16 +160,56 @@ export function containedMediaBounds(
   return { left: (containerWidth - width) / 2, top: (containerHeight - height) / 2, width, height };
 }
 
-export function expandedFocusRect(rect: LocalizationBox['rect']): LocalizationBox['rect'] | null {
-  if (!rect?.every(Number.isFinite) || rect[2] <= 0 || rect[3] <= 0) return null;
+export function normalizedFocusRect(rect: LocalizationBox['rect']): LocalizationBox['rect'] | null {
+  if (!Array.isArray(rect) || rect.length !== 4 || !rect.every(Number.isFinite)) return null;
   const [left, top, width, height] = rect;
-  const padX = Math.max(3.5, width * 0.25);
-  const padY = Math.max(3.5, height * 0.25);
-  const x = clamp(left - padX, 0, 100);
-  const y = clamp(top - padY, 0, 100);
-  const right = clamp(left + width + padX, 0, 100);
-  const bottom = clamp(top + height + padY, 0, 100);
-  return right > x && bottom > y ? [x, y, right - x, bottom - y] : null;
+  if (left < 0 || top < 0 || width <= 0 || height <= 0 || left + width > 100 || top + height > 100)
+    return null;
+  // Preserve the model geometry exactly; presentation never enlarges an attribution.
+  return rect;
+}
+
+export interface SpatialFocus {
+  rect: LocalizationBox['rect'];
+  source: 'sampled' | 'legacy';
+}
+
+export function spatialFocusAtTime(box: LocalizationBox, mediaTimeS: number): SpatialFocus | null {
+  if (
+    !Number.isFinite(mediaTimeS) ||
+    mediaTimeS < 0 ||
+    localizationTier(box) === 'hidden' ||
+    box.source !== 'gradcam' ||
+    box.temporal_source === 'event_prior'
+  )
+    return null;
+  if (box.spatial_bins !== undefined) {
+    if (!Array.isArray(box.spatial_bins) || !box.spatial_bins.length) return null;
+    for (const bin of box.spatial_bins) {
+      if (
+        !bin ||
+        typeof bin !== 'object' ||
+        !Number.isFinite(bin.start_s) ||
+        !Number.isFinite(bin.end_s) ||
+        bin.start_s < 0 ||
+        bin.end_s <= bin.start_s ||
+        !Number.isFinite(bin.score) ||
+        bin.score <= 0 ||
+        bin.score > 1 ||
+        !normalizedFocusRect(bin.rect)
+      )
+        return null;
+    }
+    const bins = [...box.spatial_bins].sort((first, second) => first.start_s - second.start_s);
+    if (bins.some((bin, index) => index > 0 && bin.start_s < bins[index - 1].end_s)) return null;
+    const bin = bins.find((item) => mediaTimeS >= item.start_s && mediaTimeS < item.end_s);
+    // Gaps, malformed data, and times outside the model samples have no substitute rectangle.
+    return bin ? { rect: bin.rect, source: 'sampled' } : null;
+  }
+  // Only old responses with a genuine temporal window may use their static attribution.
+  if (!localizationWindow(box)) return null;
+  const rect = normalizedFocusRect(box.rect);
+  return rect ? { rect, source: 'legacy' } : null;
 }
 
 export function localizationTier(box: LocalizationBox): 'normal' | 'caution' | 'hidden' {

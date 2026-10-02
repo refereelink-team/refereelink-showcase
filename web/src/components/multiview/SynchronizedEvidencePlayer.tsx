@@ -13,10 +13,10 @@ import {
   clamp,
   commonTime,
   containedMediaBounds,
-  expandedFocusRect,
+  spatialFocusAtTime,
   localizationTier,
   localizationWindow,
-  localTime,
+  loadedPausedMediaTime,
   mediaPosition,
   playbackClockTime,
   temporalFocusStrength,
@@ -56,6 +56,36 @@ function spatialSourceLabel(box: LocalizationBox) {
   return 'Visual Focus';
 }
 
+function diagnosticReason(decision: MultiviewDecision | null, index: number): string | undefined {
+  const temporal = decision?.detail.temporal_localization;
+  if (!temporal || typeof temporal !== 'object') return undefined;
+  const record = temporal as Record<string, unknown>;
+  const views = record.views;
+  const diagnostic =
+    views && typeof views === 'object'
+      ? (views as Record<string, unknown>)[String(index)]
+      : undefined;
+  const reason =
+    diagnostic && typeof diagnostic === 'object'
+      ? (diagnostic as Record<string, unknown>).reason
+      : record.reason;
+  return typeof reason === 'string' ? reason : undefined;
+}
+
+function reasonTitle(reason: string) {
+  const labels: Record<string, string> = {
+    flat_response: 'Flat temporal response',
+    full_window_response: 'Broad temporal response',
+    zero_response: 'No model activation',
+    low_view_attention: 'Low view attention',
+    crop_boundary_contact: 'Activation reaches the model crop boundary',
+    low_spatial_contrast: 'Low spatial contrast',
+    gradcam_failed: 'Grad-CAM could not be computed',
+    no_offence: 'The model predicted No Offence and returned no attribution',
+  };
+  return labels[reason] ?? reason.replaceAll('_', ' ');
+}
+
 function EvidenceTile({
   view,
   index,
@@ -75,6 +105,8 @@ function EvidenceTile({
   box,
   attention,
   showAttention,
+  analysisAvailable,
+  unavailableReason,
 }: {
   view: EvidenceView;
   index: number;
@@ -94,10 +126,31 @@ function EvidenceTile({
   box?: LocalizationBox;
   attention?: number;
   showAttention: boolean;
+  analysisAvailable: boolean;
+  unavailableReason?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const media = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const [bounds, setBounds] = useState<MediaBounds | null>(null);
+  const [presentationTimeS, setPresentationTimeS] = useState<number | null>(null);
+  const lastPresentedFrame = useRef<{ timeS: number; targetS: number } | null>(null);
+  const capturePausedFrame = useCallback((video: HTMLVideoElement) => {
+    const loadedTimeS = loadedPausedMediaTime(video);
+    if (loadedTimeS === null) return;
+    const presented = lastPresentedFrame.current;
+    // Prefer a known presented PTS for this loaded frame, otherwise use ready media time.
+    setPresentationTimeS(
+      presented && Math.abs(presented.targetS - loadedTimeS) < 0.001
+        ? presented.timeS
+        : loadedTimeS,
+    );
+  }, []);
+  function captureReadyPausedFrame(video: HTMLVideoElement) {
+    if (loadedPausedMediaTime(video) === null) return;
+    capturePausedFrame(video);
+    // A loaded paused frame has no pending playback-buffer wait.
+    onWaiting(view.camera_id, false);
+  }
   const measure = useCallback(() => {
     const host = container.current;
     const node = media.current;
@@ -126,20 +179,110 @@ function EvidenceTile({
       window.removeEventListener('resize', measure);
     };
   }, [measure]);
+  useEffect(() => {
+    const video = media.current;
+    setPresentationTimeS(null);
+    lastPresentedFrame.current = null;
+    if (!(video instanceof HTMLVideoElement)) return;
+    let disposed = false;
+    let requestId: number | null = null;
+    const usesPresentedFrames = typeof video.requestVideoFrameCallback === 'function';
+    let blocked = false;
+    const invalidate = (event: Event) => {
+      // Preload may report a late network stall while a paused frame remains fully loaded.
+      if (
+        (event.type === 'waiting' || event.type === 'stalled') &&
+        loadedPausedMediaTime(video) !== null
+      ) {
+        blocked = false;
+        capturePausedFrame(video);
+        return;
+      }
+      blocked = true;
+      lastPresentedFrame.current = null;
+      setPresentationTimeS(null);
+    };
+    const publish = (timeS: number) => {
+      if (!disposed && !video.seeking && video.readyState >= 2 && Number.isFinite(timeS))
+        setPresentationTimeS(timeS);
+    };
+    const captureCurrentTime = () => {
+      if (!blocked) publish(video.currentTime);
+    };
+    const receiveFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      blocked = false;
+      if (!video.seeking && video.readyState >= 2)
+        lastPresentedFrame.current = { timeS: metadata.mediaTime, targetS: video.currentTime };
+      publish(metadata.mediaTime);
+      if (!disposed) requestId = video.requestVideoFrameCallback(receiveFrame);
+    };
+    const requestPresentedFrame = () => {
+      if (!usesPresentedFrames || disposed) return;
+      if (requestId !== null) video.cancelVideoFrameCallback(requestId);
+      requestId = video.requestVideoFrameCallback(receiveFrame);
+    };
+    const resumeFromReadyFrame = () => {
+      if (video.seeking || video.readyState < 2) return;
+      blocked = false;
+      // A paused seek can present its only frame while seeking is still true.
+      // seeked/loadeddata confirm data at currentTime; the next presentation
+      // callback replaces this media-time snapshot with its exact frame PTS.
+      if (video.paused) capturePausedFrame(video);
+      else captureCurrentTime();
+      requestPresentedFrame();
+    };
+    const invalidatingEvents = ['seeking', 'waiting', 'stalled', 'emptied', 'loadstart'];
+    invalidatingEvents.forEach((event) => video.addEventListener(event, invalidate));
+    const fallbackEvents = ['timeupdate', 'pause'];
+    const resumingEvents = ['loadeddata', 'seeked', 'canplay', 'playing'];
+    resumingEvents.forEach((event) => video.addEventListener(event, resumeFromReadyFrame));
+    if (!usesPresentedFrames)
+      fallbackEvents.forEach((event) => video.addEventListener(event, captureCurrentTime));
+    resumeFromReadyFrame();
+    requestPresentedFrame();
+    return () => {
+      disposed = true;
+      if (requestId !== null) video.cancelVideoFrameCallback(requestId);
+      invalidatingEvents.forEach((event) => video.removeEventListener(event, invalidate));
+      fallbackEvents.forEach((event) => video.removeEventListener(event, captureCurrentTime));
+      resumingEvents.forEach((event) => video.removeEventListener(event, resumeFromReadyFrame));
+    };
+  }, [view.camera_id, view.media_url, capturePausedFrame]);
   const position = mediaPosition(commonTimeS, view, duration);
   const attentionWindow = box ? localizationWindow(box) : null;
-  const rect = box ? expandedFocusRect(box.rect) : null;
+  const focus =
+    box && presentationTimeS !== null ? spatialFocusAtTime(box, presentationTimeS) : null;
+  const rect = focus?.rect;
   const tier = box ? localizationTier(box) : 'normal';
   const strength =
     box &&
-    attentionWindow &&
-    position.state === 'active' &&
+    focus &&
+    presentationTimeS !== null &&
+    presentationTimeS >= 0 &&
+    presentationTimeS < duration &&
     showAttention &&
     !error &&
+    !loading &&
+    !waiting &&
+    !(media.current instanceof HTMLVideoElement && media.current.seeking) &&
     tier !== 'hidden'
-      ? temporalFocusStrength(box, localTime(commonTimeS, view), attentionWindow) *
-        (tier === 'caution' ? 0.64 : 1)
+      ? (focus.source === 'sampled'
+          ? 0.9
+          : attentionWindow
+            ? temporalFocusStrength(box, presentationTimeS, attentionWindow)
+            : 0) * (tier === 'caution' ? 0.64 : 1)
       : 0;
+  const evidenceReasons = [
+    ...new Set([
+      ...(box?.reliability_reasons ?? []),
+      ...(unavailableReason ? [unavailableReason] : []),
+    ]),
+  ]
+    .map(reasonTitle)
+    .join(' · ');
+  const spatialTitle = box
+    ? `Spatial method: ${box.source}${evidenceReasons ? ` · ${evidenceReasons}` : ''}`
+    : evidenceReasons || 'The model returned no spatial attribution for this view';
   const hasAttention =
     Number.isFinite(attention) && (attention as number) >= 0 && (attention as number) <= 1;
   const status = error
@@ -158,7 +301,15 @@ function EvidenceTile({
                 ? '正在缓冲'
                 : null;
   return (
-    <article className={`se-tile ${selected ? 'se-primary' : ''}`}>
+    <article
+      className={`se-tile ${selected ? 'se-primary' : ''}`}
+      data-presentation-time={presentationTimeS ?? ''}
+      data-focus-source={focus?.source ?? 'none'}
+      data-focus-rect={rect?.join(',') ?? ''}
+      data-overlay-strength={strength}
+      data-loading={loading}
+      data-waiting={waiting}
+    >
       <div className="se-tile-media" ref={container}>
         {view.media_url ? (
           view.media_kind === 'video' ? (
@@ -175,12 +326,23 @@ function EvidenceTile({
                 measure();
                 onMetadata(view.camera_id);
               }}
-              onLoadedData={() => {
+              onLoadedData={(event) => {
                 measure();
+                captureReadyPausedFrame(event.currentTarget);
                 onReady(view.camera_id);
               }}
-              onCanPlay={() => onReady(view.camera_id)}
-              onWaiting={() => onWaiting(view.camera_id, true)}
+              onCanPlay={(event) => {
+                captureReadyPausedFrame(event.currentTarget);
+                onReady(view.camera_id);
+              }}
+              onSeeked={(event) => captureReadyPausedFrame(event.currentTarget)}
+              onTimeUpdate={(event) => captureReadyPausedFrame(event.currentTarget)}
+              onPause={(event) => captureReadyPausedFrame(event.currentTarget)}
+              onWaiting={(event) => {
+                if (loadedPausedMediaTime(event.currentTarget) !== null)
+                  captureReadyPausedFrame(event.currentTarget);
+                else onWaiting(view.camera_id, true);
+              }}
               onPlaying={() => onWaiting(view.camera_id, false)}
               onError={() => onError(view.camera_id)}
             />
@@ -198,10 +360,10 @@ function EvidenceTile({
         ) : (
           <div className="se-no-media">暂无可播放视频</div>
         )}
-        {bounds && rect && attentionWindow && (
+        {bounds && rect && strength > 0 && (
           <div className="se-coordinate-layer" style={bounds}>
             <div
-              className={`se-focus-region ${tier} ${attentionWindow.source} ${box?.source ?? ''}`}
+              className={`se-focus-region ${tier} ${box?.source ?? ''}`}
               style={{
                 left: `${rect[0]}%`,
                 top: `${rect[1]}%`,
@@ -241,25 +403,29 @@ function EvidenceTile({
             )}
           </div>
         )}
-        {box && showAttention && (
+        {analysisAvailable && showAttention && (
           <div className={`se-source-label ${tier}`}>
-            <span className="se-source-chip" title={`Spatial method: ${box.source}`}>
+            <span className="se-source-chip" title={spatialTitle}>
               <small>Spatial</small>
-              {spatialSourceLabel(box)}
+              {tier === 'hidden'
+                ? 'Attribution Hidden'
+                : box
+                  ? spatialSourceLabel(box)
+                  : 'Attribution Unavailable'}
             </span>
             <span
               className="se-source-chip"
               title={
                 attentionWindow
                   ? 'Temporal source: Grad-CAM response'
-                  : 'No reliable model-derived temporal focus is available'
+                  : evidenceReasons || 'No reliable model-derived temporal focus is available'
               }
             >
               <small>Temporal</small>
               {attentionWindow ? 'Temporal Saliency' : 'Temporal Unavailable'}
             </span>
             {tier !== 'normal' && (
-              <span className="se-source-quality" title={box.reliability_reasons?.join(' · ')}>
+              <span className="se-source-quality" title={evidenceReasons || spatialTitle}>
                 {tier === 'hidden' ? 'Low Signal · Hidden' : 'Limited Signal'}
               </span>
             )}
@@ -642,6 +808,8 @@ export default function SynchronizedEvidencePlayer({
             box={decision?.localization[view.camera_id]}
             attention={decision?.view_attention[index]}
             showAttention={showAttention}
+            analysisAvailable={decision !== null}
+            unavailableReason={diagnosticReason(decision, index)}
           />
         ))}
         {!caseData.videos.length && <div className="se-no-media">该案例没有视频机位</div>}

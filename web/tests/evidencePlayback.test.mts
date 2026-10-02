@@ -4,9 +4,11 @@ import {
   commonTime,
   containedMediaBounds,
   decisionFocusTime,
-  expandedFocusRect,
+  normalizedFocusRect,
+  spatialFocusAtTime,
   localizationTier,
   localizationWindow,
+  loadedPausedMediaTime,
   localTime,
   mediaPosition,
   playbackClockTime,
@@ -115,6 +117,16 @@ test('attention fades outside its window and uses only genuine temporal score bi
   assert.equal(localizationTier({ ...box, display_tier: 'caution' }), 'caution');
 });
 
+test('loaded paused frames remain usable after late buffering events while seeks and new loads do not', () => {
+  const loaded = { paused: true, seeking: false, readyState: 4, currentTime: 2.26 };
+  assert.equal(loadedPausedMediaTime(loaded), 2.26);
+  assert.equal(loadedPausedMediaTime({ ...loaded, readyState: 2, currentTime: 0 }), 0);
+  assert.equal(loadedPausedMediaTime({ ...loaded, paused: false }), null);
+  assert.equal(loadedPausedMediaTime({ ...loaded, seeking: true }), null);
+  assert.equal(loadedPausedMediaTime({ ...loaded, readyState: 1 }), null);
+  assert.equal(loadedPausedMediaTime({ ...loaded, currentTime: Number.NaN }), null);
+});
+
 test('overlay coordinates account for letterboxing and reject invalid geometry', () => {
   assert.deepEqual(containedMediaBounds(400, 400, 1600, 900), {
     left: 0,
@@ -124,8 +136,70 @@ test('overlay coordinates account for letterboxing and reject invalid geometry',
   });
   assert.equal(containedMediaBounds(400, 0, 1600, 900), null);
   assert.equal(containedMediaBounds(400, 400, Number.NaN, 900), null);
-  assert.deepEqual(expandedFocusRect([0, 0, 100, 100]), [0, 0, 100, 100]);
-  assert.equal(expandedFocusRect([10, 10, -1, 20]), null);
+  assert.deepEqual(normalizedFocusRect([0, 0, 100, 100]), [0, 0, 100, 100]);
+  assert.equal(normalizedFocusRect([10, 10, -1, 20]), null);
+});
+
+test('attribution preserves the exact model rectangle without presentation padding', () => {
+  const rect: LocalizationBox['rect'] = [40.2, 36.4, 2.1, 4.3];
+  assert.equal(normalizedFocusRect(rect), rect);
+  assert.deepEqual(spatialFocusAtTime({ ...box, rect }, 2.5), { rect, source: 'legacy' });
+  assert.equal(normalizedFocusRect([-1, 0, 10, 10]), null);
+  assert.equal(normalizedFocusRect([95, 0, 10, 10]), null);
+  assert.equal(normalizedFocusRect([0, 95, 10, 10]), null);
+  assert.equal(normalizedFocusRect([0, 0, 0, 10]), null);
+});
+
+test('spatial samples follow the displayed media bin without extrapolating or requiring a peak', () => {
+  const first: LocalizationBox['rect'] = [10, 20, 20, 30];
+  const second: LocalizationBox['rect'] = [40, 25, 20, 30];
+  const sampled: LocalizationBox = {
+    ...box,
+    active_start_s: null,
+    active_end_s: null,
+    peak_s: null,
+    temporal_source: null,
+    reliable: false,
+    display_tier: 'caution',
+    spatial_bins: [
+      { start_s: 2, end_s: 2.5, rect: first, score: 0.8 },
+      { start_s: 2.5, end_s: 3, rect: second, score: 0.7 },
+    ],
+  };
+  assert.equal(localizationWindow(sampled), null);
+  assert.deepEqual(spatialFocusAtTime(sampled, 2.49), { rect: first, source: 'sampled' });
+  assert.deepEqual(spatialFocusAtTime(sampled, 2.5), { rect: second, source: 'sampled' });
+  assert.equal(spatialFocusAtTime(sampled, 1.9), null);
+  assert.equal(spatialFocusAtTime(sampled, 3), null);
+  assert.equal(spatialFocusAtTime(sampled, Number.NaN), null);
+  assert.equal(spatialFocusAtTime({ ...sampled, display_tier: 'hidden' }, 2.5), null);
+  assert.equal(spatialFocusAtTime({ ...sampled, temporal_source: 'event_prior' }, 2.5), null);
+  assert.equal(spatialFocusAtTime({ ...sampled, spatial_bins: [] }, 2.5), null);
+  assert.equal(spatialFocusAtTime({ ...sampled, spatial_bins: null }, 2.5), null);
+});
+
+test('spatial bins reject overlaps and invalid data instead of reverting to the static rectangle', () => {
+  const first = { start_s: 2, end_s: 2.5, rect: box.rect, score: 0.8 };
+  const second = { start_s: 2.75, end_s: 3, rect: box.rect, score: 0.6 };
+  assert.equal(spatialFocusAtTime({ ...box, spatial_bins: [first, second] }, 2.6), null);
+  assert.equal(
+    spatialFocusAtTime({ ...box, spatial_bins: [first, { ...second, start_s: 2.4 }] }, 2.45),
+    null,
+  );
+  assert.equal(
+    spatialFocusAtTime({ ...box, spatial_bins: [{ ...first, start_s: -1 }] }, 2.1),
+    null,
+  );
+  assert.equal(spatialFocusAtTime({ ...box, spatial_bins: [{ ...first, end_s: 2 }] }, 2.1), null);
+  assert.equal(
+    spatialFocusAtTime({ ...box, spatial_bins: [{ ...first, score: Number.NaN }] }, 2.1),
+    null,
+  );
+  assert.equal(spatialFocusAtTime({ ...box, spatial_bins: [{ ...first, score: 0 }] }, 2.1), null);
+  assert.equal(
+    spatialFocusAtTime({ ...box, spatial_bins: [{ ...first, rect: [90, 20, 20, 30] }] }, 2.1),
+    null,
+  );
 });
 
 test('analysis focus uses an eligible model peak and only camera synchronization offsets', () => {

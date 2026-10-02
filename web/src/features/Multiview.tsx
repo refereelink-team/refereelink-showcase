@@ -163,13 +163,14 @@ export default function Multiview({
     setSelection(id);
   }
   async function analyze() {
-    setAttentionAnalysis(undefined);
-    setFocusRequest(undefined);
+    // Preserve the last successful attribution while a retry is pending or fails.
     const result = await workflow.analyze();
     if (result && current) {
       setAttentionAnalysis({ caseId: current.case_id, analysisId: result.analysis_id });
       const commonTimeS = decisionFocusTime(current, result);
-      if (commonTimeS !== null) setFocusRequest({ token: result.analysis_id, commonTimeS });
+      setFocusRequest(
+        commonTimeS === null ? undefined : { token: result.analysis_id, commonTimeS },
+      );
     }
   }
   async function capture(id: string) {
