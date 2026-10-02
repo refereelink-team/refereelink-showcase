@@ -56,6 +56,10 @@ function spatialSourceLabel(box: LocalizationBox) {
   return 'Visual Focus';
 }
 
+function temporalFocusLabel(source: 'gradcam' | 'event_prior') {
+  return source === 'gradcam' ? 'Temporal Saliency' : 'Temporal Focus';
+}
+
 function diagnosticReason(decision: MultiviewDecision | null, index: number): string | undefined {
   const temporal = decision?.detail.temporal_localization;
   if (!temporal || typeof temporal !== 'object') return undefined;
@@ -82,8 +86,13 @@ function reasonTitle(reason: string) {
     low_spatial_contrast: 'Low spatial contrast',
     gradcam_failed: 'Grad-CAM could not be computed',
     no_offence: 'The model predicted No Offence and returned no attribution',
+    event_prior: 'Selected review interval',
+    optical_flow_event_prior: 'Selected review interval',
   };
-  return labels[reason] ?? reason.replaceAll('_', ' ');
+  return (
+    labels[reason] ??
+    (reason.toLowerCase().includes('prior') ? 'Focus unavailable' : reason.replaceAll('_', ' '))
+  );
 }
 
 function EvidenceTile({
@@ -417,12 +426,16 @@ function EvidenceTile({
               className="se-source-chip"
               title={
                 attentionWindow
-                  ? 'Temporal source: Grad-CAM response'
+                  ? attentionWindow.source === 'gradcam'
+                    ? 'Grad-CAM temporal response'
+                    : 'Selected review interval'
                   : evidenceReasons || 'No reliable model-derived temporal focus is available'
               }
             >
               <small>Temporal</small>
-              {attentionWindow ? 'Temporal Saliency' : 'Temporal Unavailable'}
+              {attentionWindow
+                ? temporalFocusLabel(attentionWindow.source)
+                : 'Temporal Unavailable'}
             </span>
             {tier !== 'normal' && (
               <span className="se-source-quality" title={evidenceReasons || spatialTitle}>
@@ -947,14 +960,14 @@ export default function SynchronizedEvidencePlayer({
                       left: `${windowStart}%`,
                       width: `${Math.max(0.3, windowEnd - windowStart)}%`,
                     }}
-                    title={`Temporal Saliency · ${start.toFixed(2)}–${end.toFixed(2)} s`}
+                    title={`${window.source === 'gradcam' ? 'Temporal Saliency' : 'Focus Window'} · ${start.toFixed(2)}–${end.toFixed(2)} s`}
                   />
                 )}
                 {windowVisible && peak >= (range?.startS ?? 0) && peak <= (range?.endS ?? 0) && (
                   <span
                     className="se-temporal-peak"
                     style={{ left: `${timelinePercent(peak, duration)}%` }}
-                    title={`Saliency Peak · ${peak.toFixed(2)} s`}
+                    title={`Focus Peak · ${peak.toFixed(2)} s`}
                   />
                 )}
                 <span
@@ -987,7 +1000,7 @@ export default function SynchronizedEvidencePlayer({
           }) ? (
             <span>
               <i className="se-legend-focus" />
-              Temporal Saliency
+              Focus Window
             </span>
           ) : (
             <span title="No reliable model-derived temporal focus is available">

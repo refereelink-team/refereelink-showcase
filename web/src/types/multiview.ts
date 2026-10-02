@@ -137,7 +137,7 @@ export interface LocalizationBox {
   peak_s?: number | null;
   temporal_bins?: TemporalBin[];
   spatial_bins?: SpatialBin[] | null;
-  // Kept for historical API compatibility; event_prior is never rendered as model focus.
+  // Preserve actual temporal provenance while the UI uses neutral review labels.
   temporal_source?: 'gradcam' | 'event_prior' | null;
   display_tier?: 'normal' | 'caution' | 'hidden';
   reliable?: boolean;

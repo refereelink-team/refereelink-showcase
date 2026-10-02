@@ -10,7 +10,7 @@ export interface LocalizationWindow {
   startS: number;
   endS: number;
   peakS: number;
-  source: 'gradcam';
+  source: 'gradcam' | 'event_prior';
 }
 
 export interface MediaBounds {
@@ -93,8 +93,8 @@ export function playbackClockTime(
 
 export function localizationWindow(box: LocalizationBox): LocalizationWindow | null {
   if (
-    box.temporal_source !== 'gradcam' ||
-    localizationTier(box) === 'hidden' ||
+    (box.temporal_source !== 'gradcam' && box.temporal_source !== 'event_prior') ||
+    (box.temporal_source === 'gradcam' && localizationTier(box) === 'hidden') ||
     !Number.isFinite(box.active_start_s) ||
     !Number.isFinite(box.active_end_s) ||
     !Number.isFinite(box.peak_s)
@@ -104,8 +104,8 @@ export function localizationWindow(box: LocalizationBox): LocalizationWindow | n
   const endS = box.active_end_s as number;
   const peakS = box.peak_s as number;
   if (startS < 0 || endS <= startS || peakS < startS || peakS > endS) return null;
-  // Legacy priors and incomplete responses never manufacture a playback focus.
-  return { startS, endS, peakS, source: 'gradcam' };
+  // Use only explicitly returned review/model intervals; incomplete responses invent no focus.
+  return { startS, endS, peakS, source: box.temporal_source };
 }
 
 export function temporalFocusStrength(
@@ -179,11 +179,10 @@ export function spatialFocusAtTime(box: LocalizationBox, mediaTimeS: number): Sp
     !Number.isFinite(mediaTimeS) ||
     mediaTimeS < 0 ||
     localizationTier(box) === 'hidden' ||
-    box.source !== 'gradcam' ||
-    box.temporal_source === 'event_prior'
+    box.source !== 'gradcam'
   )
     return null;
-  if (box.spatial_bins !== undefined) {
+  if (box.spatial_bins !== undefined && box.spatial_bins !== null) {
     if (!Array.isArray(box.spatial_bins) || !box.spatial_bins.length) return null;
     for (const bin of box.spatial_bins) {
       if (
@@ -206,7 +205,7 @@ export function spatialFocusAtTime(box: LocalizationBox, mediaTimeS: number): Sp
     // Gaps, malformed data, and times outside the model samples have no substitute rectangle.
     return bin ? { rect: bin.rect, source: 'sampled' } : null;
   }
-  // Only old responses with a genuine temporal window may use their static attribution.
+  // Aggregate CAM uses its explicitly returned review/model interval, without adding geometry.
   if (!localizationWindow(box)) return null;
   const rect = normalizedFocusRect(box.rect);
   return rect ? { rect, source: 'legacy' } : null;
@@ -231,5 +230,19 @@ export function decisionFocusTime(
     const attention = Number.isFinite(weight) && weight >= 0 ? weight : 0;
     if (!best || attention > best.attention) best = { timeS, attention };
   }
-  return best?.timeS ?? null;
+  if (best) return best.timeS;
+  const sampling = decision.detail?.sampling;
+  const temporal = decision.detail?.temporal_localization;
+  const usesReviewTime =
+    sampling &&
+    typeof sampling === 'object' &&
+    (sampling as Record<string, unknown>).uses_event_prior === true &&
+    temporal &&
+    typeof temporal === 'object' &&
+    (temporal as Record<string, unknown>).timestamp_source === 'event_prior';
+  return usesReviewTime &&
+    Number.isFinite(decision.timestamp) &&
+    (decision.timestamp as number) >= 0
+    ? decision.timestamp
+    : null;
 }

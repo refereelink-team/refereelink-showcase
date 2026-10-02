@@ -69,9 +69,14 @@ test('shared timeline covers longer camera tails and clamps marks to real bounds
   assert.equal(timelinePercent(2, 0), 0);
 });
 
-test('missing or legacy temporal responses never manufacture an event anchor', () => {
+test('explicit review intervals preserve provenance while missing responses invent no focus', () => {
   assert.equal(localizationWindow({ rect: [0, 0, 10, 10], score: 0.5, source: 'gradcam' }), null);
-  assert.equal(localizationWindow({ ...box, temporal_source: 'event_prior' }), null);
+  assert.deepEqual(localizationWindow({ ...box, temporal_source: 'event_prior' }), {
+    startS: 2,
+    endS: 3,
+    peakS: 2.5,
+    source: 'event_prior',
+  });
   assert.equal(localizationWindow({ ...box, temporal_source: null }), null);
   assert.equal(localizationWindow({ ...box, temporal_source: undefined }), null);
   assert.equal(localizationWindow({ ...box, active_start_s: null }), null);
@@ -173,9 +178,20 @@ test('spatial samples follow the displayed media bin without extrapolating or re
   assert.equal(spatialFocusAtTime(sampled, 3), null);
   assert.equal(spatialFocusAtTime(sampled, Number.NaN), null);
   assert.equal(spatialFocusAtTime({ ...sampled, display_tier: 'hidden' }, 2.5), null);
-  assert.equal(spatialFocusAtTime({ ...sampled, temporal_source: 'event_prior' }, 2.5), null);
+  assert.deepEqual(spatialFocusAtTime({ ...sampled, temporal_source: 'event_prior' }, 2.5), {
+    rect: second,
+    source: 'sampled',
+  });
   assert.equal(spatialFocusAtTime({ ...sampled, spatial_bins: [] }, 2.5), null);
   assert.equal(spatialFocusAtTime({ ...sampled, spatial_bins: null }, 2.5), null);
+});
+
+test('aggregate attribution uses a returned review interval without expanding geometry or unhiding a region', () => {
+  const aggregate: LocalizationBox = { ...box, temporal_source: 'event_prior', spatial_bins: null };
+  assert.deepEqual(spatialFocusAtTime(aggregate, 2.5), { rect: box.rect, source: 'legacy' });
+  assert.equal(spatialFocusAtTime({ ...aggregate, spatial_bins: [] }, 2.5), null);
+  assert.equal(spatialFocusAtTime({ ...aggregate, display_tier: 'hidden' }, 2.5), null);
+  assert.ok(localizationWindow({ ...aggregate, display_tier: 'hidden' }));
 });
 
 test('spatial bins reject overlaps and invalid data instead of reverting to the static rectangle', () => {
@@ -202,7 +218,7 @@ test('spatial bins reject overlaps and invalid data instead of reverting to the 
   );
 });
 
-test('analysis focus uses an eligible model peak and only camera synchronization offsets', () => {
+test('analysis focus uses an explicit model or review peak and only camera synchronization offsets', () => {
   const caseData = { videos: [camera('main', 500), camera('side', -400)] } as MultiviewCase;
   const decision = {
     localization: { main: box, side: { ...box, peak_s: 2.75 } },
@@ -212,9 +228,9 @@ test('analysis focus uses an eligible model peak and only camera synchronization
   assert.equal(
     decisionFocusTime(caseData, {
       ...decision,
-      localization: { main: box, side: { ...box, temporal_source: 'event_prior' } },
+      localization: { main: box, side: { ...box, peak_s: 2.75, temporal_source: 'event_prior' } },
     }),
-    2,
+    3.15,
   );
   assert.equal(
     decisionFocusTime(caseData, {
@@ -223,9 +239,19 @@ test('analysis focus uses an eligible model peak and only camera synchronization
     }),
     2,
   );
+  assert.equal(
+    decisionFocusTime(caseData, {
+      ...decision,
+      localization: {
+        main: box,
+        side: { ...box, peak_s: 2.75, temporal_source: 'event_prior', display_tier: 'hidden' },
+      },
+    }),
+    3.15,
+  );
 });
 
-test('analysis with no eligible temporal evidence does not seek to an annotated time', () => {
+test('analysis with no explicit temporal evidence does not guess a review time', () => {
   const caseData = { videos: [camera('main', 500)] } as MultiviewCase;
   assert.equal(decisionFocusTime(caseData, { localization: {} } as MultiviewDecision), null);
   assert.equal(
@@ -236,7 +262,7 @@ test('analysis with no eligible temporal evidence does not seek to an annotated 
   );
   assert.equal(
     decisionFocusTime(caseData, {
-      localization: { main: { ...box, temporal_source: 'event_prior' } },
+      localization: { main: { ...box, temporal_source: 'event_prior', peak_s: null } },
     } as MultiviewDecision),
     null,
   );
@@ -247,6 +273,25 @@ test('analysis with no eligible temporal evidence does not seek to an annotated 
         localization: { main: box },
       } as MultiviewDecision,
     ),
+    null,
+  );
+});
+
+test('an explicit review timestamp may focus a no-box result only with declared provenance', () => {
+  const caseData = { videos: [camera('main', 500)] } as MultiviewCase;
+  const decision = {
+    localization: {},
+    timestamp: 2.1,
+    detail: {
+      sampling: { uses_event_prior: true },
+      temporal_localization: { timestamp_source: 'event_prior' },
+    },
+  } as unknown as MultiviewDecision;
+  assert.equal(decisionFocusTime(caseData, decision), 2.1);
+  assert.equal(decisionFocusTime(caseData, { ...decision, detail: {} }), null);
+  assert.equal(decisionFocusTime(caseData, { ...decision, timestamp: null }), null);
+  assert.equal(
+    decisionFocusTime(caseData, { ...decision, detail: { sampling: { uses_event_prior: false } } }),
     null,
   );
 });
