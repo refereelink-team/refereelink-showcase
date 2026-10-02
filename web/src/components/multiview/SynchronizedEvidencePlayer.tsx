@@ -25,6 +25,7 @@ import {
   viewRange,
 } from './evidencePlayback';
 import type { MediaBounds } from './evidencePlayback';
+import { observeVideoPresentation } from './videoPresentation';
 import './synchronized-evidence.css';
 
 export interface EvidenceReadiness {
@@ -49,52 +50,6 @@ export interface SynchronizedEvidencePlayerProps {
   onTimeChange?: (commonTimeS: number) => void;
 }
 
-function spatialSourceLabel(box: LocalizationBox) {
-  if (box.source === 'gradcam') return 'Visual Attribution';
-  if (box.source === 'optical_flow') return 'Motion Cue';
-  if (box.source === 'scripted') return 'Rule Cue';
-  return 'Visual Focus';
-}
-
-function temporalFocusLabel(source: 'gradcam' | 'event_prior') {
-  return source === 'gradcam' ? 'Temporal Saliency' : 'Temporal Focus';
-}
-
-function diagnosticReason(decision: MultiviewDecision | null, index: number): string | undefined {
-  const temporal = decision?.detail.temporal_localization;
-  if (!temporal || typeof temporal !== 'object') return undefined;
-  const record = temporal as Record<string, unknown>;
-  const views = record.views;
-  const diagnostic =
-    views && typeof views === 'object'
-      ? (views as Record<string, unknown>)[String(index)]
-      : undefined;
-  const reason =
-    diagnostic && typeof diagnostic === 'object'
-      ? (diagnostic as Record<string, unknown>).reason
-      : record.reason;
-  return typeof reason === 'string' ? reason : undefined;
-}
-
-function reasonTitle(reason: string) {
-  const labels: Record<string, string> = {
-    flat_response: 'Flat temporal response',
-    full_window_response: 'Broad temporal response',
-    zero_response: 'No model activation',
-    low_view_attention: 'Low view attention',
-    crop_boundary_contact: 'Activation reaches the model crop boundary',
-    low_spatial_contrast: 'Low spatial contrast',
-    gradcam_failed: 'Grad-CAM could not be computed',
-    no_offence: 'The model predicted No Offence and returned no attribution',
-    event_prior: 'Selected review interval',
-    optical_flow_event_prior: 'Selected review interval',
-  };
-  return (
-    labels[reason] ??
-    (reason.toLowerCase().includes('prior') ? 'Focus unavailable' : reason.replaceAll('_', ' '))
-  );
-}
-
 function EvidenceTile({
   view,
   index,
@@ -114,8 +69,6 @@ function EvidenceTile({
   box,
   attention,
   showAttention,
-  analysisAvailable,
-  unavailableReason,
 }: {
   view: EvidenceView;
   index: number;
@@ -135,30 +88,13 @@ function EvidenceTile({
   box?: LocalizationBox;
   attention?: number;
   showAttention: boolean;
-  analysisAvailable: boolean;
-  unavailableReason?: string;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const media = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
   const [bounds, setBounds] = useState<MediaBounds | null>(null);
   const [presentationTimeS, setPresentationTimeS] = useState<number | null>(null);
-  const lastPresentedFrame = useRef<{ timeS: number; targetS: number } | null>(null);
-  const capturePausedFrame = useCallback((video: HTMLVideoElement) => {
-    const loadedTimeS = loadedPausedMediaTime(video);
-    if (loadedTimeS === null) return;
-    const presented = lastPresentedFrame.current;
-    // Prefer a known presented PTS for this loaded frame, otherwise use ready media time.
-    setPresentationTimeS(
-      presented && Math.abs(presented.targetS - loadedTimeS) < 0.001
-        ? presented.timeS
-        : loadedTimeS,
-    );
-  }, []);
   function captureReadyPausedFrame(video: HTMLVideoElement) {
-    if (loadedPausedMediaTime(video) === null) return;
-    capturePausedFrame(video);
-    // A loaded paused frame has no pending playback-buffer wait.
-    onWaiting(view.camera_id, false);
+    if (loadedPausedMediaTime(video) !== null) onWaiting(view.camera_id, false);
   }
   const measure = useCallback(() => {
     const host = container.current;
@@ -191,72 +127,9 @@ function EvidenceTile({
   useEffect(() => {
     const video = media.current;
     setPresentationTimeS(null);
-    lastPresentedFrame.current = null;
     if (!(video instanceof HTMLVideoElement)) return;
-    let disposed = false;
-    let requestId: number | null = null;
-    const usesPresentedFrames = typeof video.requestVideoFrameCallback === 'function';
-    let blocked = false;
-    const invalidate = (event: Event) => {
-      // Preload may report a late network stall while a paused frame remains fully loaded.
-      if (
-        (event.type === 'waiting' || event.type === 'stalled') &&
-        loadedPausedMediaTime(video) !== null
-      ) {
-        blocked = false;
-        capturePausedFrame(video);
-        return;
-      }
-      blocked = true;
-      lastPresentedFrame.current = null;
-      setPresentationTimeS(null);
-    };
-    const publish = (timeS: number) => {
-      if (!disposed && !video.seeking && video.readyState >= 2 && Number.isFinite(timeS))
-        setPresentationTimeS(timeS);
-    };
-    const captureCurrentTime = () => {
-      if (!blocked) publish(video.currentTime);
-    };
-    const receiveFrame: VideoFrameRequestCallback = (_now, metadata) => {
-      blocked = false;
-      if (!video.seeking && video.readyState >= 2)
-        lastPresentedFrame.current = { timeS: metadata.mediaTime, targetS: video.currentTime };
-      publish(metadata.mediaTime);
-      if (!disposed) requestId = video.requestVideoFrameCallback(receiveFrame);
-    };
-    const requestPresentedFrame = () => {
-      if (!usesPresentedFrames || disposed) return;
-      if (requestId !== null) video.cancelVideoFrameCallback(requestId);
-      requestId = video.requestVideoFrameCallback(receiveFrame);
-    };
-    const resumeFromReadyFrame = () => {
-      if (video.seeking || video.readyState < 2) return;
-      blocked = false;
-      // A paused seek can present its only frame while seeking is still true.
-      // seeked/loadeddata confirm data at currentTime; the next presentation
-      // callback replaces this media-time snapshot with its exact frame PTS.
-      if (video.paused) capturePausedFrame(video);
-      else captureCurrentTime();
-      requestPresentedFrame();
-    };
-    const invalidatingEvents = ['seeking', 'waiting', 'stalled', 'emptied', 'loadstart'];
-    invalidatingEvents.forEach((event) => video.addEventListener(event, invalidate));
-    const fallbackEvents = ['timeupdate', 'pause'];
-    const resumingEvents = ['loadeddata', 'seeked', 'canplay', 'playing'];
-    resumingEvents.forEach((event) => video.addEventListener(event, resumeFromReadyFrame));
-    if (!usesPresentedFrames)
-      fallbackEvents.forEach((event) => video.addEventListener(event, captureCurrentTime));
-    resumeFromReadyFrame();
-    requestPresentedFrame();
-    return () => {
-      disposed = true;
-      if (requestId !== null) video.cancelVideoFrameCallback(requestId);
-      invalidatingEvents.forEach((event) => video.removeEventListener(event, invalidate));
-      fallbackEvents.forEach((event) => video.removeEventListener(event, captureCurrentTime));
-      resumingEvents.forEach((event) => video.removeEventListener(event, resumeFromReadyFrame));
-    };
-  }, [view.camera_id, view.media_url, capturePausedFrame]);
+    return observeVideoPresentation(video, setPresentationTimeS);
+  }, [view.camera_id, view.media_url]);
   const position = mediaPosition(commonTimeS, view, duration);
   const attentionWindow = box ? localizationWindow(box) : null;
   const focus =
@@ -272,8 +145,6 @@ function EvidenceTile({
     showAttention &&
     !error &&
     !loading &&
-    !waiting &&
-    !(media.current instanceof HTMLVideoElement && media.current.seeking) &&
     tier !== 'hidden'
       ? (focus.source === 'sampled'
           ? 0.9
@@ -281,17 +152,6 @@ function EvidenceTile({
             ? temporalFocusStrength(box, presentationTimeS, attentionWindow)
             : 0) * (tier === 'caution' ? 0.64 : 1)
       : 0;
-  const evidenceReasons = [
-    ...new Set([
-      ...(box?.reliability_reasons ?? []),
-      ...(unavailableReason ? [unavailableReason] : []),
-    ]),
-  ]
-    .map(reasonTitle)
-    .join(' · ');
-  const spatialTitle = box
-    ? `Spatial method: ${box.source}${evidenceReasons ? ` · ${evidenceReasons}` : ''}`
-    : evidenceReasons || 'The model returned no spatial attribution for this view';
   const hasAttention =
     Number.isFinite(attention) && (attention as number) >= 0 && (attention as number) <= 1;
   const status = error
@@ -306,7 +166,7 @@ function EvidenceTile({
             ? '尚未进入该机位片段'
             : position.state === 'after'
               ? '该机位片段已结束'
-              : waiting
+              : waiting && presentationTimeS === null
                 ? '正在缓冲'
                 : null;
   return (
@@ -409,38 +269,6 @@ function EvidenceTile({
               <button type="button" onClick={() => onRetry(view.camera_id)}>
                 重试
               </button>
-            )}
-          </div>
-        )}
-        {analysisAvailable && showAttention && (
-          <div className={`se-source-label ${tier}`}>
-            <span className="se-source-chip" title={spatialTitle}>
-              <small>Spatial</small>
-              {tier === 'hidden'
-                ? 'Attribution Hidden'
-                : box
-                  ? spatialSourceLabel(box)
-                  : 'Attribution Unavailable'}
-            </span>
-            <span
-              className="se-source-chip"
-              title={
-                attentionWindow
-                  ? attentionWindow.source === 'gradcam'
-                    ? 'Grad-CAM temporal response'
-                    : 'Selected review interval'
-                  : evidenceReasons || 'No reliable model-derived temporal focus is available'
-              }
-            >
-              <small>Temporal</small>
-              {attentionWindow
-                ? temporalFocusLabel(attentionWindow.source)
-                : 'Temporal Unavailable'}
-            </span>
-            {tier !== 'normal' && (
-              <span className="se-source-quality" title={evidenceReasons || spatialTitle}>
-                {tier === 'hidden' ? 'Low Signal · Hidden' : 'Limited Signal'}
-              </span>
             )}
           </div>
         )}
@@ -821,8 +649,6 @@ export default function SynchronizedEvidencePlayer({
             box={decision?.localization[view.camera_id]}
             attention={decision?.view_attention[index]}
             showAttention={showAttention}
-            analysisAvailable={decision !== null}
-            unavailableReason={diagnosticReason(decision, index)}
           />
         ))}
         {!caseData.videos.length && <div className="se-no-media">该案例没有视频机位</div>}
