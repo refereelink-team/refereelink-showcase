@@ -132,8 +132,27 @@ remote Python tests, including the real CUDA-health check. These results predate
 the subsequent whole-video and seeking changes.
 
 The current whole-video and seeking changes pass 102 frontend tests, TypeScript,
-formatting, and a production build. Current remote Python validation, migration of
-existing review media, and rendered backward-seek acceptance remain pending because
-the presentation Mac cannot reach the CUDA host through its current Tailscale
-connection. Unit tests do not establish that the runtime media migration or the
-rendered playback fix has been accepted.
+formatting, and a production build. The complete suite on AstraForge passes 90
+Python tests with no skips, including real CUDA health, actual 30 and 30000/1001
+FPS encoding, and full/ranged derivative responses. Both targeted Ruff checks
+and all 58 extracted-source hashes and AST dependency coverage pass.
+
+Five existing prepared sessions received verified playback derivatives. Each
+retained all 579 frame timestamps, 30 FPS, and 852 × 480 dimensions while reducing
+the maximum keyframe interval from 8.333334 seconds to 0.5 seconds. All 24 protected
+file hashes remained identical through migration and service restart, including
+original review media, labels and session records, metadata, practice bundles,
+runtime settings, source media, and the demonstration bundle. All 18 deployed code
+and build files match their local checksums. Complete and ranged playback responses
+select the derivative without changing the feature-recovery path.
+
+A fresh independent session prepared the complete source interval of 0–19313 ms
+on CUDA, producing 579 decoded review frames, 579 metadata frames, and 48 tracks.
+Its maximum keyframe interval is 0.5 seconds and the demonstration bundle remains
+unchanged. This verifies the deployed preparation and media paths, not cross-match
+classification accuracy.
+
+Rendered backward-seek acceptance remains pending: the computer-use tool reports
+`Transport closed`. The Mac frontend and its remote API proxy are running. Media
+checks and unit tests do not establish browser picture/overlay synchronization;
+the browser must be refreshed and the paused backward-seek interaction checked.
