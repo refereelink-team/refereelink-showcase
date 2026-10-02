@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   emptyFacts,
   factsFromDecision,
+  modelRecommendations,
   prefillFacts,
   setHumanFact,
 } from '../src/components/multiview/reviewFacts.ts';
@@ -141,4 +142,45 @@ test('a no-offence result does not fabricate a contact intensity', () => {
   });
   assert.equal(facts.offence_confirmed.value, false);
   assert.equal(facts.intensity.value, null);
+});
+
+test('model recommendations remain visible after human overrides and explicit unknowns', () => {
+  let draft = factsFromDecision(decision);
+  draft = setHumanFact(draft, 'action', 'Holding');
+  draft = setHumanFact(draft, 'intensity', 'careless');
+  draft = setHumanFact(draft, 'offence_confirmed', '');
+  const before = structuredClone(draft);
+  const recommendations = modelRecommendations(draft, decision);
+  assert.equal(recommendations.action.value, 'Tackle');
+  assert.equal(recommendations.intensity.value, 'reckless');
+  assert.equal(recommendations.offence_confirmed.value, true);
+  assert.equal(recommendations.action.confirmed, false);
+  assert.equal(recommendations.contact.value, null);
+  assert.deepEqual(draft, before);
+});
+
+test('accepting a model recommendation does not erase its persistent display provenance', () => {
+  const draft = factsFromDecision(decision);
+  draft.intensity = { ...draft.intensity, confirmed: true };
+  const recommendations = modelRecommendations(draft, decision);
+  assert.equal(recommendations.intensity.source, 'model');
+  assert.equal(recommendations.intensity.value, 'reckless');
+  assert.equal(draft.intensity.confirmed, true);
+});
+
+test('a new model result updates displayed recommendations without rewriting human facts', () => {
+  const draft = setHumanFact(factsFromDecision(decision), 'action', 'Pushing');
+  const recommendations = modelRecommendations(draft, { ...decision, action: 'Holding' });
+  assert.equal(recommendations.action.value, 'Holding');
+  assert.equal(draft.action.value, 'Pushing');
+  assert.equal(draft.action.source, 'human');
+});
+
+test('persistent AI decoration never promotes scripted or legacy rule facts to model evidence', () => {
+  const draft = factsFromDecision(decision);
+  assert.equal(modelRecommendations(draft, { ...decision, mode: 'scripted' }).action.value, null);
+  const historical = modelRecommendations(draft, null);
+  assert.equal(historical.action.source, 'model');
+  draft.action = { value: 'Tackle', source: 'rule', confirmed: false, confidence: null };
+  assert.equal(modelRecommendations(draft, null).action.value, null);
 });

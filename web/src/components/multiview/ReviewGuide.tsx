@@ -11,7 +11,7 @@ import type {
   RuleTraceEntry,
 } from '../../types/multiview';
 import FoulLocationPitch from './FoulLocationPitch';
-import { factLabels, setHumanFact } from './reviewFacts';
+import { factLabels, modelRecommendations, setHumanFact } from './reviewFacts';
 import type { FactName } from './reviewFacts';
 import {
   attemptRelevant,
@@ -119,6 +119,7 @@ function Choices({
   name,
   title,
   fact,
+  recommendation,
   choices,
   disabled,
   onChange,
@@ -128,6 +129,7 @@ function Choices({
   name: FactName;
   title: string;
   fact: EvidenceValue;
+  recommendation: EvidenceValue;
   choices: readonly Choice[];
   disabled: boolean;
   onChange: (raw: string) => void;
@@ -149,11 +151,16 @@ function Choices({
       <div className={`rg-choices${compact ? ' rg-choices-compact' : ''}`}>
         {[...choices, unknown].map((choice) => {
           const selected = choice.value === '' ? !confirmed : confirmed && raw === choice.value;
+          const isRecommendation =
+            choice.value !== '' &&
+            recommendation.source === 'model' &&
+            recommendation.value !== null &&
+            String(recommendation.value) === choice.value;
           const isSuggestion = suggested && raw === choice.value;
           return (
             <label
               key={choice.value}
-              className={`rg-choice${selected ? ' selected' : ''}${isSuggestion ? ' suggested' : ''}`}
+              className={`rg-choice${selected ? ' selected' : ''}${isSuggestion ? ' suggested' : ''}${isRecommendation ? ' ai-recommended' : ''}`}
             >
               <input
                 type="radio"
@@ -170,9 +177,13 @@ function Choices({
                 <span className="rg-choice-title">{choice.label}</span>
                 {choice.detail && <span className="rg-choice-detail">{choice.detail}</span>}
               </span>
-              {isSuggestion && (
-                <span className="rg-choice-source">{fact.source === 'model' ? 'AI' : '建议'}</span>
-              )}
+              {isRecommendation ? (
+                <span className="rg-choice-source rg-choice-ai" aria-label="AI 模型建议">
+                  <span aria-hidden="true">✦</span> AI
+                </span>
+              ) : isSuggestion ? (
+                <span className="rg-choice-source">建议</span>
+              ) : null}
             </label>
           );
         })}
@@ -196,11 +207,13 @@ function Choices({
 
 function ActionChooser({
   fact,
+  recommendation,
   disabled,
   animate,
   onChange,
 }: {
   fact: EvidenceValue;
+  recommendation: EvidenceValue;
   disabled: boolean;
   animate: boolean;
   onChange: (raw: string) => void;
@@ -210,13 +223,23 @@ function ActionChooser({
   const label =
     actions.find((choice) => choice.value === fact.value)?.label ??
     (fact.value ? String(fact.value) : '选择动作');
+  const recommendedLabel =
+    recommendation.value !== null
+      ? (actions.find((choice) => choice.value === recommendation.value)?.label ??
+        String(recommendation.value))
+      : null;
+  const modelMatches = recommendation.value !== null && recommendation.value === fact.value;
   return (
     <details
       className={`rg-action-chooser${animate ? ' rg-new-suggestion' : ''}`}
       open={expanded}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
-      <summary ref={summary} aria-disabled={disabled}>
+      <summary
+        ref={summary}
+        aria-disabled={disabled}
+        className={modelMatches ? 'ai-recommended' : undefined}
+      >
         <span className="rg-action-summary">
           <span className="rg-action-label">动作类型</span>
           <span className="rg-action-value">
@@ -234,6 +257,14 @@ function ActionChooser({
             )}
           </span>
         </span>
+        {recommendedLabel && (
+          <span
+            className="rg-action-model-recommendation"
+            aria-label={`AI 建议：${recommendedLabel}`}
+          >
+            <span aria-hidden="true">✦</span> AI{!modelMatches && ` · ${recommendedLabel}`}
+          </span>
+        )}
         <span className="rg-action-change">
           {expanded ? '收起' : fact.value === null ? '选择' : '更改'}
         </span>
@@ -242,6 +273,7 @@ function ActionChooser({
         name="action"
         title="选择动作"
         fact={fact}
+        recommendation={recommendation}
         choices={actions}
         disabled={disabled}
         animate={false}
@@ -327,6 +359,7 @@ export default function ReviewGuide({
     return () => window.clearTimeout(timer);
   }, [prefillToken, changedFields]);
 
+  const recommendations = modelRecommendations(facts, decision);
   const noOffence = facts.offence_confirmed.value === false;
   const dive = facts.action.value?.trim().toLowerCase() === 'dive';
   const ballStopped = facts.ball_in_play.confirmed && facts.ball_in_play.value === false;
@@ -369,6 +402,7 @@ export default function ReviewGuide({
         name={name}
         title={question}
         fact={facts[name]}
+        recommendation={recommendations[name]}
         choices={choices}
         disabled={disabled || busy}
         onChange={(raw) => onChange(setHumanFact(facts, name, raw), name)}
@@ -523,6 +557,7 @@ export default function ReviewGuide({
               <>
                 <ActionChooser
                   fact={facts.action}
+                  recommendation={recommendations.action}
                   disabled={disabled || busy}
                   animate={
                     animated.includes('action') &&

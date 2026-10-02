@@ -706,3 +706,83 @@
     font-size: 10px;
     overflow-wrap: anywhere;
 }
+
+/* Model emphasis remains independent of the reviewer's selected radio value. */
+.rg-choice.ai-recommended,
+.rg-action-chooser > summary.ai-recommended {
+    border: 1px solid transparent;
+    background:
+        linear-gradient(115deg, #f1f7ff, #faf3ff 45%, #fff5ec) padding-box,
+        linear-gradient(110deg, #65c9ee, #a997ff, #e891cf, #ffb178, #65c9ee) border-box;
+    background-size:
+        100% 100%,
+        300% 100%;
+    box-shadow: 0 2px 14px #b18cdb20;
+    animation: rg-ai-spectrum 7s ease-in-out infinite;
+    isolation: isolate;
+}
+.rg-choice.ai-recommended::before,
+.rg-action-chooser > summary.ai-recommended::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(110deg, #91dff72b, #bd9aff33, #f2a6d12e, #ffc48a2b, #91dff72b);
+    background-size: 220% 100%;
+    animation: rg-ai-spectrum 9s ease-in-out infinite reverse;
+    pointer-events: none;
+    z-index: -1;
+}
+.rg-choice.ai-recommended.selected {
+    box-shadow:
+        0 0 0 1px #9984d459,
+        0 3px 16px #b18cdb26;
+}
+.rg-choice.ai-recommended input {
+    accent-color: #8071ba;
+}
+.rg-choice.ai-recommended:hover {
+    box-shadow:
+        0 0 0 1px #a28fe44d,
+        0 5px 20px #b18cdb30;
+}
+.rg-choice-source.rg-choice-ai,
+.rg-action-model-recommendation {
+    color: #7060a2;
+    border: 1px solid #bca9ea66;
+    border-radius: 5px;
+    background: #ffffff8c;
+    padding: 3px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.rg-action-chooser > summary {
+    position: relative;
+    border-radius: 7px;
+}
+.rg-action-model-recommendation {
+    margin-left: auto;
+    background: linear-gradient(110deg, #e7f5ff, #f3e9ff, #fff1e6);
+}
+@keyframes rg-ai-spectrum {
+    0%,
+    100% {
+        background-position:
+            0% 50%,
+            0% 50%;
+    }
+    50% {
+        background-position:
+            100% 50%,
+            100% 50%;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .rg-choice.ai-recommended,
+    .rg-choice.ai-recommended::before,
+    .rg-action-chooser > summary.ai-recommended,
+    .rg-action-chooser > summary.ai-recommended::before {
+        animation: none;
+    }
+}

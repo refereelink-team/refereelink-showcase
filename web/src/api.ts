@@ -1,3 +1,4 @@
+import type { TrackingCase, TrackingFramesPage, TrackingResult } from './types/tracking';
 import type { Catalog, Job, TelemetrySnapshot, TelemetryConfig } from './types';
 import type {
   LiveMultiviewStatus,
@@ -102,6 +103,15 @@ export const api = {
     post<Job>('/api/experiments/jobs', { kind, case_id }),
   job: (id: string) => request<Job>(`/api/experiments/jobs/${encodeURIComponent(id)}`),
   jobs: () => request<{ jobs: Job[] }>('/api/experiments/jobs'),
+  trackingCase: (id: string) =>
+    request<TrackingCase>(`/api/tracking/cases/${encodeURIComponent(id)}`),
+  startTracking: (id: string) => post<Job>(`/api/tracking/cases/${encodeURIComponent(id)}/jobs`),
+  trackingResult: (id: string) =>
+    request<TrackingResult>(`/api/tracking/results/${encodeURIComponent(id)}`),
+  trackingFrames: (id: string, revision: string, offset: number) =>
+    request<TrackingFramesPage>(
+      `/api/tracking/results/${encodeURIComponent(id)}/frames?offset=${offset}&limit=240&revision=${encodeURIComponent(revision)}`,
+    ),
   telemetry: () => request<TelemetrySnapshot>('/api/telemetry/snapshot'),
   telemetryAction: (action: 'demo/start' | 'demo/stop' | 'connect' | 'disconnect') =>
     post<TelemetrySnapshot>(`/api/telemetry/${action}`),

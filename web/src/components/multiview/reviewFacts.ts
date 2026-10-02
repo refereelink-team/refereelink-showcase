@@ -78,6 +78,22 @@ export function factsFromDecision(decision: MultiviewDecision): FoulFacts {
   return facts;
 }
 
+// Keep displayed model recommendations separate from editable adjudication facts.
+export function modelRecommendations(
+  current: FoulFacts,
+  decision: MultiviewDecision | null,
+): FoulFacts {
+  if (decision) return decision.mode === 'model' ? factsFromDecision(decision) : emptyFacts();
+  const recommendations = emptyFacts();
+  for (const name of Object.keys(factLabels) as (keyof FoulFacts)[]) {
+    if (name === 'location') continue;
+    const fact = current[name];
+    if (fact.source === 'model' && fact.value !== null)
+      Object.assign(recommendations, { [name]: { ...fact } });
+  }
+  return recommendations;
+}
+
 export function setHumanFact(current: FoulFacts, name: FactName, raw: string): FoulFacts {
   const value = raw === '' ? null : raw === 'true' ? true : raw === 'false' ? false : raw;
   const next = {

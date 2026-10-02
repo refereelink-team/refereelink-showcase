@@ -11,6 +11,7 @@ from .catalog import MediaCatalog
 from .gateway import create_gateway
 from .jobs import JobManager
 from .settings import Settings
+from .tracking import TrackingRepository, create_tracking_router
 
 
 class JobRequest(BaseModel):
@@ -48,6 +49,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title='RefereeLink Showcase', lifespan=lifespan)
     app.state.catalog, app.state.jobs = catalog, manager
+    app.state.tracking = TrackingRepository(catalog, manager)
+    app.include_router(create_tracking_router(app.state.tracking))
     app.include_router(create_gateway(client, settings.upstream))
     try:
         from .telemetry import TelemetryService
