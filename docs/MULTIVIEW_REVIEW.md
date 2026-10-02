@@ -1,6 +1,6 @@
 # Multi-view video review
 
-The showcase presents the upstream multi-view review workflow in a compact evidence workspace. Python services, inference, and rule evaluation remain on the remote CUDA host. The Mac runs the browser client and frontend checks.
+The showcase presents the upstream multi-view review workflow in a compact evidence workspace. Python services, inference, and rule evaluation remain on the remote CUDA host. The Mac runs the browser client and frontend checks. The current right-hand workflow is documented in [Guided multi-view adjudication](GUIDED_REVIEW.md).
 
 ## Operator workflow
 
@@ -9,10 +9,10 @@ The showcase presents the upstream multi-view review workflow in a compact evide
 3. Review all cameras together. Three views use one large view plus two smaller views; four views use a two-by-two grid. Selecting a primary view changes its prominence and audio selection without creating a new playback clock.
 4. Use shared play/pause, seek, speed, and ±0.04-second controls. These are fixed time increments, not an assertion of one decoded video frame. Per-view timeline rows also control the shared time.
 5. Start analysis when actual CUDA resources and all evidence videos are ready. Timeline attention windows, peaks, and video focus regions appear only after a successful analysis in the current case visit; historical results do not display playback focus before analysis. Switching cases or reopening the page hides this focus. A failed analysis retry retains the current visit's last successful attribution without seeking again; a successful result replaces it and clears an obsolete peak request when no valid peak exists. The model result remains a suggestion. A new result seeks the cameras to an explicitly returned model or review peak. A no-box result may use a returned review timestamp only when its API metadata declares that source. If neither is available, playback stays at its current time. Spatial attribution remains separate from event timing.
-6. Confirm model-suggested facts individually, or edit them. Accepting a suggestion retains model provenance and records human confirmation. Editing records human provenance. Team, match context, and foul location are not fabricated from action logits.
-7. Click, drag, use arrow keys, or enter X/Y meter coordinates to mark the foul location. Clear and undo are available. Saved geometry identifies the zone and whether the location is in the offender's own penalty area.
-8. Save the draft, confirm the review, mark it uncertain, or archive it. Saving a draft preserves the existing review state; a new draft starts as pending. Review state and rule completeness are independent.
-9. Open **Rule basis** to see missing facts, conflicts, restart, sanction, geometry, rule version, Law references, quoted rule excerpts, and the deterministic explanation. The optional language-model explanation is requested after saving and must match the saved revision. A failed or unavailable LLM leaves the deterministic template visible with its true source.
+6. Follow **Action**, **Severity**, **Location** and **Context** before viewing the recommendation. Supplement fields may remain blank; Next visits both pages by default. Confirmed no-offence and dive paths omit inapplicable questions. Unknown answers are allowed. Accept this page's visible model suggestions explicitly, or edit them; Next never confirms suggestions. Accepting retains model provenance, while editing records human provenance.
+7. On the optional location page, click, drag, use arrow keys, or enter X/Y meter coordinates to mark the point. Clear and undo are available. Team and defending direction are requested only when penalty-area ownership needs them. Skip retains existing values and never fabricates a point.
+8. View the unsaved draft assessment. Definite conclusions and conditional outcomes are shown separately. Incomplete or ambiguous results save as uncertain; a fully determined result can be explicitly confirmed. Restore, reload and archive are available in the more menu.
+9. Expand **View evidence** in the result to inspect confidence, camera weights, runtime metadata, geometry, rule version, Law references and rule trace. Conditional recommendations use deterministic templates and do not call an LLM. Optional explanations for complete saved records remain revision-bound.
 
 A direct link takes the form `/?case=<case_id>#/multiview`. Drafts survive switching cases during the current mounted page session. They do not survive a browser reload. **Restore draft** returns to saved facts, and **Reload review** reads the current server record. A revision conflict preserves the draft and never retries an overwrite automatically.
 
@@ -27,8 +27,8 @@ A direct link takes the form `/?case=<case_id>#/multiview`. Drafts survive switc
 - Production attribution again uses one configured pre-attention `norm1` patch layer. CLS exclusion and disconnected-gradient checks remain in place. The backend's optional multi-layer diagnostic API remains available, but the restored production caller does not use the earlier two-layer experiment.
 - View attention comes from actual model weights. Missing spatial evidence is not replaced with a fabricated focus region.
 - A saved review and human values, including explicitly cleared facts, are protected from later model prefill. Model suggestions are initially unconfirmed. New suggestions receive a 1.1-second highlight; reduced-motion CSS disables the animation.
-- Editing invalidates the displayed rule conclusion and explanation until saving. Changing the action clears rule-derived contact so the backend can derive it again, while preserving an explicit human contact override.
-- Loading, analysis, saving, and explanations use case generations. Explanations additionally match the draft generation, request sequence, and persisted revision. Failed loads do not enter the draft cache. Late save responses update the canonical record without applying an unrelated case's state.
+- Editing invalidates an old preview and explanation immediately, then requests a new draft preview after a 200 ms debounce. Strict saving does not confirm contact from an action label. Historical rule-derived contact and victim values appear as unconfirmed draft suggestions; historical records and explicit human overrides are preserved.
+- Loading, analysis, saving, previews and explanations use case generations. Preview responses additionally match the current draft; saved explanations match the draft generation, request sequence and persisted revision. Failed previews retain the draft and cannot restore an obsolete confirmation action. Failed loads do not enter the draft cache. Late save responses update the canonical record without applying an unrelated case's state.
 
 The synchronization, geometry rendering, fact vocabulary, and rule-display behavior are adapted from the upstream MIT-licensed `refereelink-backend` multi-view page and components. Protocol types retain upstream compatibility, including recognition of historical temporal-source values. Extracted inference algorithms in `backend_core` were not modified by this migration.
 
@@ -42,22 +42,22 @@ The synchronization, geometry rendering, fact vocabulary, and rule-display behav
 | Grad-CAM region, temporal gating, reliability and attention weights | Evidence tiles and model inspector |
 | Analysis peak focus | Token-bound shared seek request |
 | Pitch location, numeric coordinates, clear, undo and geometry | `FoulLocationPitch` |
-| Safe model prefill, full facts, confidence, source and confirmation | `reviewFacts` and `FactsEditor` |
+| Safe model prefill, page-scoped adoption and guided optional facts | `reviewFacts`, `reviewGuideFlow` and `ReviewGuide` |
 | Draft, reviewed, uncertain and archived records | `useMultiviewReview` |
-| Dirty assessment and explanation invalidation | Review request scope and inspector |
-| Full rule status, missing facts, conflicts, Law trace and excerpts | `ReviewAssessment` |
-| Template, optional LLM, automatic explanation and revision protection | Review workflow and assessment panel |
+| Unsaved assessment, certainty and stale-response protection | Draft preview and review request scope |
+| Conditional recommendations, missing-fact links and rule evidence | Guided result and evidence disclosure |
+| Deterministic conditional templates and saved-revision explanations | Upstream rule preview and review workflow |
 | Anonymous case queue and state filter | Multi-view page |
 | Case deep links and restoration | Search-parameter selection and draft cache |
 | Real model/media readiness and stale-response protection | Status resource, evidence readiness and request scope |
 
 The original navigation remains intact. Compared with the design concept, the implementation uses actual view-attention weights instead of invented diagnostic metrics, removes decorative timeline thumbnails, and keeps provenance chips below editable facts. Video tiles omit method captions. Review actions remain visible while the inspector body scrolls. Narrow screens stack the evidence and review panels.
 
-## Current frontend validation — restored review intervals
+## Historical frontend validation — restored review intervals
 
-The frontend regression suite contains 42 passing Node tests, including seven presentation-clock event-sequence regressions. Type checking, formatting, production build, and whitespace checks passed. Fresh deployment acceptance completed on the remote CUDA host and local browser. The historical records below describe previous builds and do not establish current runtime performance.
+Before the guided-review redesign, the frontend regression suite contained 42 passing Node tests, including seven presentation-clock event-sequence regressions. Type checking, formatting, production build, and whitespace checks passed for that snapshot. Deployment acceptance completed on the remote CUDA host and local browser. These historical records describe previous builds and do not establish acceptance or runtime performance of the current guided flow.
 
-| Check | Current executed evidence |
+| Check | Historical executed evidence |
 | --- | --- |
 | Upstream regressions | All 170 multi-view and event tests passed on the remote CUDA host; this suite is separate from showcase CI |
 | Real event-window inference | Four installed official cases used one 0.96-second source window from 2.52 to 3.48 seconds around their existing 3.0-second annotation. Returned region protocols passed validation; No Offence returned no spatial records |

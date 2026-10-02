@@ -3,6 +3,7 @@ import type {
   LiveMultiviewStatus,
   MultiviewDecision,
   ReviewRecord,
+  ReviewPreview,
   FoulFacts,
   ReviewState,
   ExplanationResponse,
@@ -71,6 +72,12 @@ export const api = {
     request<{ review: ReviewRecord | null; analysis: MultiviewDecision | null }>(
       `/api/multiview/cases/${encodeURIComponent(id)}/review`,
     ),
+  reviewHistory: (id: string) =>
+    request<{ count: number; history: ReviewRecord[] }>(
+      `/api/multiview/cases/${encodeURIComponent(id)}/review/history`,
+    ),
+  previewReview: (id: string, facts: FoulFacts) =>
+    post<ReviewPreview>(`/api/multiview/cases/${encodeURIComponent(id)}/review/preview`, { facts }),
   saveReview: (
     id: string,
     body: {
@@ -78,6 +85,7 @@ export const api = {
       analysis_id: string | null;
       facts: FoulFacts;
       review_state: ReviewState;
+      preserve_unknowns?: boolean;
     },
   ) =>
     request<{ review: ReviewRecord }>(`/api/multiview/cases/${encodeURIComponent(id)}/review`, {

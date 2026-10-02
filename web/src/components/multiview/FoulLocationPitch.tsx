@@ -17,6 +17,7 @@ export interface FoulLocationPitchProps {
   dirty: boolean;
   saving?: boolean;
   disabled?: boolean;
+  compact?: boolean;
   onChange: (location: FoulLocation | null) => void;
   onSave?: () => void;
 }
@@ -44,6 +45,7 @@ export default function FoulLocationPitch({
   dirty,
   saving = false,
   disabled = false,
+  compact = false,
   onChange,
   onSave,
 }: FoulLocationPitchProps) {
@@ -157,36 +159,39 @@ export default function FoulLocationPitch({
           </g>
         )}
       </svg>
-      <div className="rv-pitch-coordinates">
-        <label>
-          X 坐标 (m)
-          <input
-            type="number"
-            min="0"
-            max="105"
-            step="0.1"
-            aria-label="犯规位置 X 坐标"
-            disabled={disabled}
-            value={location?.x_m ?? ''}
-            placeholder="0–105"
-            onChange={(event) => edit('x_m', event.target.value)}
-          />
-        </label>
-        <label>
-          Y 坐标 (m)
-          <input
-            type="number"
-            min="0"
-            max="68"
-            step="0.1"
-            aria-label="犯规位置 Y 坐标"
-            disabled={disabled}
-            value={location?.y_m ?? ''}
-            placeholder="0–68"
-            onChange={(event) => edit('y_m', event.target.value)}
-          />
-        </label>
-      </div>
+      <details className="rv-pitch-coordinate-details" open={compact ? undefined : true}>
+        {compact && <summary>精确坐标</summary>}
+        <div className="rv-pitch-coordinates">
+          <label>
+            X 坐标 (m)
+            <input
+              type="number"
+              min="0"
+              max="105"
+              step="0.1"
+              aria-label="犯规位置 X 坐标"
+              disabled={disabled}
+              value={location?.x_m ?? ''}
+              placeholder="0–105"
+              onChange={(event) => edit('x_m', event.target.value)}
+            />
+          </label>
+          <label>
+            Y 坐标 (m)
+            <input
+              type="number"
+              min="0"
+              max="68"
+              step="0.1"
+              aria-label="犯规位置 Y 坐标"
+              disabled={disabled}
+              value={location?.y_m ?? ''}
+              placeholder="0–68"
+              onChange={(event) => edit('y_m', event.target.value)}
+            />
+          </label>
+        </div>
+      </details>
       <div className="rv-pitch-readout">
         <span>{geometry?.zone ?? approximateZone(location)}</span>
         <div className="rv-pitch-actions">
@@ -217,16 +222,22 @@ export default function FoulLocationPitch({
           )}
         </div>
       </div>
-      <p className="rv-pitch-context">
-        犯规方 {offender === 'home' ? '主队' : offender === 'away' ? '客队' : '待确认'}
-        {' · '}主队防守{' '}
-        {defendsSide === 'left' ? '左侧球门' : defendsSide === 'right' ? '右侧球门' : '方向待确认'}
-        {geometry?.in_offender_own_penalty_area === true
-          ? ' · 犯规方本方禁区内'
-          : geometry?.in_offender_own_penalty_area === false
-            ? ' · 犯规方本方禁区外'
-            : ''}
-      </p>
+      {!compact && (
+        <p className="rv-pitch-context">
+          犯规方 {offender === 'home' ? '主队' : offender === 'away' ? '客队' : '待确认'}
+          {' · '}主队防守{' '}
+          {defendsSide === 'left'
+            ? '左侧球门'
+            : defendsSide === 'right'
+              ? '右侧球门'
+              : '方向待确认'}
+          {geometry?.in_offender_own_penalty_area === true
+            ? ' · 犯规方本方禁区内'
+            : geometry?.in_offender_own_penalty_area === false
+              ? ' · 犯规方本方禁区外'
+              : ''}
+        </p>
+      )}
       {location && (
         <span className={`rv-source-chip ${location.source === 'vision' ? 'model' : 'human'}`}>
           {location.source === 'vision' ? '视觉建议' : '人工标注'}

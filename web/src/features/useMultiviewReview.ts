@@ -5,11 +5,14 @@ import type {
   FoulFacts,
   MultiviewDecision,
   ReviewRecord,
+  ReviewPreview,
   ReviewState,
 } from '../types/multiview';
 import { emptyFacts, prefillFacts } from '../components/multiview/reviewFacts';
 import type { FactName } from '../components/multiview/reviewFacts';
 import { ReviewRequestScope } from './reviewRequestScope';
+import { normalizeLegacyDerivedFacts } from '../components/multiview/reviewGuideFlow';
+import type { ReviewGuideStep } from '../components/multiview/reviewGuideFlow';
 
 interface Draft {
   caseId: string;
@@ -19,7 +22,9 @@ interface Draft {
   review: ReviewRecord | null;
   explanation: ExplanationResponse | null;
   dirty: boolean;
+  editedByReviewer: boolean;
   protectedFields: FactName[];
+  step: ReviewGuideStep;
 }
 function blank(caseId: string): Draft {
   return {
@@ -30,7 +35,9 @@ function blank(caseId: string): Draft {
     review: null,
     explanation: null,
     dirty: false,
+    editedByReviewer: false,
     protectedFields: [],
+    step: 'action',
   };
 }
 function message(error: unknown) {
@@ -50,6 +57,24 @@ export function useMultiviewReview(caseId: string) {
   const [states, setStates] = useState<Record<string, { state: ReviewState; revision: number }>>(
     {},
   );
+  const [previewSnapshot, setPreviewSnapshot] = useState<{
+    caseId: string;
+    facts: FoulFacts;
+    result: ReviewPreview | null;
+    error: string | null;
+    pending: boolean;
+  } | null>(null);
+  const [historySnapshot, setHistorySnapshot] = useState<{
+    caseId: string;
+    records: ReviewRecord[];
+    pending: boolean;
+    error: string | null;
+  } | null>(null);
+  const historySequence = useRef(0);
+  const previewSequence = useRef(0);
+  const [previewRetry, setPreviewRetry] = useState(0);
+  const activePreview = useRef(previewSnapshot);
+  activePreview.current = previewSnapshot;
   const scope = useRef(new ReviewRequestScope());
   const cache = useRef(new Map<string, Draft>());
   const analyzeLock = useRef(false);
@@ -75,7 +100,7 @@ export function useMultiviewReview(caseId: string) {
       const result = await api.review(caseId);
       if (!scope.current.current(ticket, true)) return;
       const seeded = result.review
-        ? result.review.facts
+        ? normalizeLegacyDerivedFacts(result.review.facts)
         : result.analysis
           ? prefillFacts(emptyFacts(), result.analysis, {
               protectedFields: new Set<FactName>(),
@@ -89,8 +114,10 @@ export function useMultiviewReview(caseId: string) {
         decision: result.analysis,
         review: result.review,
         explanation: null,
-        dirty: !result.review && result.analysis !== null,
+        dirty: result.review ? seeded !== result.review.facts : result.analysis !== null,
+        editedByReviewer: false,
         protectedFields: [],
+        step: result.review ? 'result' : 'action',
       });
       if (result.review)
         setStates((previous) => ({
@@ -111,6 +138,8 @@ export function useMultiviewReview(caseId: string) {
     setNotice(null);
     setNewModelFields([]);
     setPrefillToken(undefined);
+    previewSequence.current++;
+    setPreviewSnapshot(null);
     const cached = cache.current.get(caseId);
     setDraft(cached ?? blank(caseId));
     if (cached) setLoading(false);
@@ -121,12 +150,59 @@ export function useMultiviewReview(caseId: string) {
   }, [caseId, load]);
 
   useEffect(() => {
+    if (!caseId || loading || !draft.hydrated || draft.caseId !== caseId) return;
+    const facts = draft.facts;
+    const ticket = scope.current.ticket();
+    const sequence = ++previewSequence.current;
+    let cancelled = false;
+    setPreviewSnapshot({ caseId, facts, result: null, error: null, pending: true });
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await api.previewReview(caseId, facts);
+        if (
+          cancelled ||
+          sequence !== previewSequence.current ||
+          !scope.current.current(ticket, true)
+        )
+          return;
+        setPreviewSnapshot({ caseId, facts, result, error: null, pending: false });
+      } catch (error) {
+        if (
+          cancelled ||
+          sequence !== previewSequence.current ||
+          !scope.current.current(ticket, true)
+        )
+          return;
+        setPreviewSnapshot({ caseId, facts, result: null, error: message(error), pending: false });
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [caseId, draft.caseId, draft.facts, draft.hydrated, loading, previewRetry]);
+
+  function invalidatePreview() {
+    previewSequence.current++;
+    setPreviewSnapshot(null);
+    setPreviewRetry((value) => value + 1);
+  }
+  function retryPreview() {
+    invalidatePreview();
+  }
+  function setStep(step: ReviewGuideStep) {
+    setDraft((current) => ({ ...current, step }));
+  }
+
+  useEffect(() => {
     if (!prefillToken) return;
     const timer = window.setTimeout(() => setNewModelFields([]), 1200);
     return () => window.clearTimeout(timer);
   }, [prefillToken]);
 
   function edit(facts: FoulFacts, field?: FactName) {
+    if (saveLock.current) return;
+    invalidatePreview();
     scope.current.edited();
     explainSequence.current++;
     setExplaining(false);
@@ -137,6 +213,7 @@ export function useMultiviewReview(caseId: string) {
       ...current,
       facts,
       dirty: true,
+      editedByReviewer: true,
       explanation: null,
       protectedFields:
         field && !current.protectedFields.includes(field)
@@ -145,20 +222,26 @@ export function useMultiviewReview(caseId: string) {
     }));
   }
   function discard() {
+    if (saveLock.current || analyzeLock.current) return;
+    invalidatePreview();
     scope.current.edited();
     explainSequence.current++;
     setExplaining(false);
     setDraft((current) => ({
       ...current,
       facts:
-        current.review?.facts ??
+        (current.review ? normalizeLegacyDerivedFacts(current.review.facts) : null) ??
         (current.decision
           ? prefillFacts(emptyFacts(), current.decision, {
               protectedFields: new Set<FactName>(),
               hasSavedReview: false,
             }).facts
           : emptyFacts()),
-      dirty: false,
+      dirty: Boolean(
+        current.review &&
+        normalizeLegacyDerivedFacts(current.review.facts) !== current.review.facts,
+      ),
+      editedByReviewer: false,
       protectedFields: [],
       explanation: null,
     }));
@@ -182,6 +265,7 @@ export function useMultiviewReview(caseId: string) {
         protectedFields: new Set(current.protectedFields),
         hasSavedReview: Boolean(current.review),
       });
+      invalidatePreview();
       scope.current.edited();
       explainSequence.current++;
       setExplaining(false);
@@ -194,11 +278,7 @@ export function useMultiviewReview(caseId: string) {
       });
       setNewModelFields(seeded.changedFields);
       setPrefillToken(result.decision.analysis_id);
-      setNotice(
-        seeded.changedFields.length
-          ? '模型分析完成，已预填建议；请逐项确认后保存'
-          : '模型分析完成，现有人工事实已保留；保存后更新规则评估',
-      );
+      setNotice(seeded.changedFields.length ? 'AI 建议已更新' : '分析完成，人工填写已保留');
       return result.decision;
     } catch (error) {
       if (scope.current.current(ticket)) setError(message(error));
@@ -234,57 +314,93 @@ export function useMultiviewReview(caseId: string) {
   }
   async function save(state: ReviewState) {
     if (!caseId || saveLock.current || analyzing || loading) return;
+    const current = activeDraft.current;
+    const snapshot = activePreview.current;
+    if (
+      state === 'reviewed' &&
+      (!snapshot ||
+        snapshot.caseId !== caseId ||
+        snapshot.facts !== current.facts ||
+        snapshot.pending ||
+        !snapshot.result?.can_finalize)
+    ) {
+      setError('当前建议尚未确定，请先补充事实或保存为待确认。');
+      return;
+    }
     saveLock.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
     const ticket = scope.current.ticket();
-    const current = activeDraft.current;
     try {
       const result = await api.saveReview(caseId, {
         expected_revision: current.review?.revision ?? 0,
         analysis_id: current.decision?.analysis_id ?? null,
         facts: current.facts,
         review_state: state,
+        preserve_unknowns: true,
       });
       setStates((previous) => ({
         ...previous,
         [caseId]: { state: result.review.review_state, revision: result.review.revision },
       }));
-      if (!scope.current.current(ticket)) {
-        const visible = activeDraft.current;
-        const canonical = {
-          ...current,
-          review: result.review,
-          facts: result.review.facts,
-          dirty: false,
-          explanation: null,
-          protectedFields: [],
-          hydrated: true,
-        };
-        cache.current.set(caseId, canonical);
-        if (activeCase.current === caseId && visible.facts === current.facts) {
-          setDraft(canonical);
-          scope.current.edited();
-          setNotice(`复核已保存 · 修订 ${result.review.revision}`);
-          void explainRecord(result.review);
-        }
-        return;
-      }
-      scope.current.edited();
-      setDraft({
+      if (activeCase.current === caseId) historySequence.current++;
+      setHistorySnapshot((previous) =>
+        previous?.caseId === caseId
+          ? {
+              ...previous,
+              pending: false,
+              error: null,
+              records: [
+                result.review,
+                ...previous.records.filter((record) => record.revision !== result.review.revision),
+              ],
+            }
+          : previous,
+      );
+      const canonical: Draft = {
         ...current,
         review: result.review,
         facts: result.review.facts,
         dirty: false,
+        editedByReviewer: false,
         explanation: null,
         protectedFields: [],
-      });
-      setNewModelFields([]);
-      setNotice(
-        `复核已保存 · 修订 ${result.review.revision}${result.review.assessment.status !== 'complete' ? ' · 规则事实仍需补充，可在规则依据中查看' : ''}`,
-      );
-      void explainRecord(result.review);
+        hydrated: true,
+      };
+      // A save may finish after switching cases or editing a draft. Preserve newer input.
+      const visible = activeDraft.current;
+      const latest =
+        activeCase.current === caseId && visible.caseId === caseId
+          ? visible
+          : cache.current.get(caseId);
+      const updated =
+        latest && latest.facts !== current.facts
+          ? { ...latest, review: result.review, dirty: true, explanation: null }
+          : { ...canonical, step: latest?.step ?? current.step };
+      cache.current.set(caseId, updated);
+      if (
+        scope.current.current(ticket, true) ||
+        (activeCase.current === caseId && visible.caseId === caseId)
+      ) {
+        invalidatePreview();
+        scope.current.edited();
+        setDraft(updated);
+        setNewModelFields([]);
+        setNotice(
+          updated.dirty
+            ? '复核已保存，后续修改仍保留在草稿中'
+            : result.review.review_state === 'uncertain'
+              ? '已保存为待确认'
+              : '复核已保存',
+        );
+        if (
+          !updated.dirty &&
+          result.review.assessment.status === 'complete' &&
+          state === 'reviewed'
+        )
+          void explainRecord(result.review);
+      }
     } catch (error) {
       if (scope.current.current(ticket)) setError(message(error));
     } finally {
@@ -294,7 +410,31 @@ export function useMultiviewReview(caseId: string) {
   }
   async function explain() {
     const current = activeDraft.current;
-    if (current.review && !current.dirty && !saving) await explainRecord(current.review);
+    if (
+      current.review &&
+      current.review.assessment.status === 'complete' &&
+      !current.dirty &&
+      !saving
+    )
+      await explainRecord(current.review);
+  }
+  async function loadHistory() {
+    const ticket = scope.current.ticket();
+    const sequence = ++historySequence.current;
+    setHistorySnapshot((previous) => ({
+      caseId,
+      records: previous?.caseId === caseId ? previous.records : [],
+      pending: true,
+      error: null,
+    }));
+    try {
+      const result = await api.reviewHistory(caseId);
+      if (scope.current.current(ticket) && sequence === historySequence.current)
+        setHistorySnapshot({ caseId, records: result.history, pending: false, error: null });
+    } catch (error) {
+      if (scope.current.current(ticket) && sequence === historySequence.current)
+        setHistorySnapshot({ caseId, records: [], pending: false, error: message(error) });
+    }
   }
   function showError(error: unknown) {
     setError(message(error));
@@ -305,7 +445,7 @@ export function useMultiviewReview(caseId: string) {
       setNotice('正在处理当前操作，完成后可重新读取复核。');
       return;
     }
-    if (activeDraft.current.dirty) {
+    if (activeDraft.current.editedByReviewer) {
       setError('草稿已保留。先还原草稿，再重试读取服务器最新复核。');
       return;
     }
@@ -314,6 +454,10 @@ export function useMultiviewReview(caseId: string) {
     await load();
   }
   const visible = draft.caseId === caseId ? draft : blank(caseId);
+  const currentPreview =
+    previewSnapshot?.caseId === caseId && previewSnapshot.facts === visible.facts
+      ? previewSnapshot
+      : null;
   return {
     ...visible,
     loading: loading || draft.caseId !== caseId,
@@ -324,6 +468,15 @@ export function useMultiviewReview(caseId: string) {
     notice,
     newModelFields,
     prefillToken,
+    preview: currentPreview?.result ?? null,
+    previewError: currentPreview?.error ?? null,
+    previewLoading: !loading && visible.hydrated && (!currentPreview || currentPreview.pending),
+    setStep,
+    retryPreview,
+    history: historySnapshot?.caseId === caseId ? historySnapshot.records : [],
+    historyLoading: historySnapshot?.caseId === caseId && historySnapshot.pending,
+    historyError: historySnapshot?.caseId === caseId ? historySnapshot.error : null,
+    loadHistory,
     states,
     edit,
     discard,

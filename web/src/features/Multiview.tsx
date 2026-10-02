@@ -7,9 +7,8 @@ import { Alert, Empty, Footer, Modes, PageHeader, Icon } from '../components/UI'
 import SynchronizedEvidencePlayer from '../components/multiview/SynchronizedEvidencePlayer';
 import type { EvidenceReadiness } from '../components/multiview/SynchronizedEvidencePlayer';
 import { decisionFocusTime } from '../components/multiview/evidencePlayback';
-import FoulLocationPitch from '../components/multiview/FoulLocationPitch';
-import FactsEditor from '../components/multiview/FactsEditor';
-import ReviewAssessment from '../components/multiview/ReviewAssessment';
+import ReviewGuide from '../components/multiview/ReviewGuide';
+import { adoptModelFields } from '../components/multiview/reviewGuideFlow';
 import { useMultiviewReview } from './useMultiviewReview';
 import './multiview.css';
 
@@ -115,7 +114,6 @@ export default function Multiview({
   const [selection, setSelection] = useState(linkedCase);
   const [cases, setCases] = useState<MultiviewCase[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
-  const [panel, setPanel] = useState<'facts' | 'rules'>('facts');
   const [readiness, setReadiness] = useState(noMedia);
   const [focusRequest, setFocusRequest] = useState<{
     token: string | number;
@@ -323,192 +321,39 @@ export default function Multiview({
           )}
         </main>
         <aside className="mv-inspector" aria-label="判罚复核">
-          <section className="mv-model-panel">
-            <div className="section-line">
-              <h2>模型建议</h2>
-              {decision && (
-                <span className={`mv-source-label ${decision.mode}`}>
-                  {decision.mode === 'model' ? 'CUDA 模型' : '脚本结果'}
-                </span>
-              )}
-            </div>
-            {mode === 'live' ? (
-              <Empty compact>捕获回放后分析</Empty>
-            ) : decision ? (
-              <>
-                <div className="mv-model-result">
-                  <h3>{decision.decision_zh || decision.decision}</h3>
-                  <span className="mv-confidence">
-                    {Math.round(decision.confidence * 100)}%<small>置信度</small>
-                  </span>
-                </div>
-                <p className="quiet">
-                  {decision.action} · {decision.severity}
-                  {decision.inference_ms !== null
-                    ? ` · ${Math.round(decision.inference_ms)} ms`
-                    : ''}
-                </p>
-                {current && decision.view_attention.length > 0 && (
-                  <div className="mv-attention" aria-label="机位关注权重">
-                    {current.videos.map((view, index) => {
-                      const weight = decision.view_attention[index];
-                      return Number.isFinite(weight) ? (
-                        <div key={view.camera_id}>
-                          <span>机位 {index + 1}</span>
-                          <meter
-                            min="0"
-                            max="1"
-                            value={Math.max(0, Math.min(1, weight))}
-                            aria-label={`机位 ${index + 1}关注权重`}
-                          />
-                          <strong>{Math.round(weight * 100)}%</strong>
-                        </div>
-                      ) : null;
-                    })}
-                  </div>
-                )}
-              </>
-            ) : (
-              <Empty compact>
-                {workflow.loading ? '正在读取已有分析…' : '点击开始分析，生成模型建议'}
-              </Empty>
-            )}
-          </section>
-          {mode === 'video' && (
-            <>
-              <div className="mv-review-tabs" role="tablist" aria-label="复核面板">
-                {(['facts', 'rules'] as const).map((value) => (
-                  <button
-                    key={value}
-                    id={`mv-review-tab-${value}`}
-                    role="tab"
-                    aria-selected={panel === value}
-                    aria-controls={`mv-review-panel-${value}`}
-                    tabIndex={panel === value ? 0 : -1}
-                    className={panel === value ? 'selected' : ''}
-                    onClick={() => setPanel(value)}
-                    onKeyDown={(event) => {
-                      if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-                        event.preventDefault();
-                        const next =
-                          event.key === 'Home'
-                            ? 'facts'
-                            : event.key === 'End'
-                              ? 'rules'
-                              : panel === 'facts'
-                                ? 'rules'
-                                : 'facts';
-                        setPanel(next);
-                        document.getElementById(`mv-review-tab-${next}`)?.focus();
-                      }
-                    }}
-                  >
-                    {value === 'facts' ? '事实确认' : '规则依据'}
-                    {value === 'rules' && workflow.dirty && <i aria-label="待重新评估" />}
-                  </button>
-                ))}
-              </div>
-              <div
-                className="mv-review-content"
-                id={`mv-review-panel-${panel}`}
-                role="tabpanel"
-                aria-labelledby={`mv-review-tab-${panel}`}
-              >
-                {panel === 'facts' ? (
-                  <>
-                    <FoulLocationPitch
-                      key={selection}
-                      location={workflow.facts.location}
-                      geometry={
-                        workflow.dirty ? null : (workflow.review?.assessment.geometry ?? null)
-                      }
-                      offenderTeam={workflow.facts.offender_team}
-                      homeDefendsSide={workflow.facts.home_defends_side}
-                      dirty={workflow.dirty}
-                      saving={workflow.saving}
-                      disabled={!editable || workflow.analyzing}
-                      onChange={(location) => workflow.edit({ ...workflow.facts, location })}
-                    />
-                    <FactsEditor
-                      facts={workflow.facts}
-                      onChange={workflow.edit}
-                      newModelFields={workflow.newModelFields}
-                      prefillToken={workflow.prefillToken}
-                      disabled={!editable || workflow.analyzing}
-                    />
-                  </>
-                ) : (
-                  <ReviewAssessment
-                    assessment={workflow.review?.assessment ?? null}
-                    explanation={workflow.explanation}
-                    revision={workflow.review?.revision ?? null}
-                    dirty={workflow.dirty}
-                    explaining={workflow.explaining}
-                    onExplain={() => void workflow.explain()}
-                    explainDisabled={!workflow.review || workflow.dirty || workflow.saving}
-                  />
-                )}
-              </div>
-              <section className="mv-review-actions">
-                <button
-                  className="text-button mv-reload-review"
-                  disabled={workflow.loading || workflow.saving || workflow.analyzing}
-                  onClick={() => void workflow.refresh()}
-                >
-                  重新载入复核
-                </button>
-                <p className="mv-draft-status" role="status">
-                  {workflow.loading
-                    ? '正在读取复核…'
-                    : workflow.dirty
-                      ? '草稿已修改 · 保存后重新评估'
-                      : workflow.review
-                        ? `${stateLabels[workflow.review.review_state]} · 修订 ${workflow.review.revision}`
-                        : '尚未保存复核'}
-                </p>
-                <div className="mv-save-row">
-                  <button
-                    className="button secondary"
-                    disabled={!editable || workflow.analyzing}
-                    onClick={() => void workflow.save(workflow.review?.review_state ?? 'pending')}
-                  >
-                    {workflow.saving ? '正在保存…' : '保存草稿'}
-                  </button>
-                  <button
-                    className="button primary"
-                    disabled={!editable || workflow.analyzing}
-                    onClick={() => void workflow.save('reviewed')}
-                  >
-                    确认复核
-                  </button>
-                </div>
-                <div className="mv-secondary-row">
-                  <button
-                    className="text-button"
-                    disabled={!editable || workflow.analyzing}
-                    onClick={() => void workflow.save('uncertain')}
-                  >
-                    标记待确认
-                  </button>
-                  <button
-                    className="text-button"
-                    disabled={!editable || workflow.analyzing}
-                    onClick={() => void workflow.save('archived')}
-                  >
-                    归档
-                  </button>
-                  {workflow.dirty && (
-                    <button
-                      className="text-button"
-                      disabled={!editable || workflow.analyzing}
-                      onClick={workflow.discard}
-                    >
-                      还原草稿
-                    </button>
-                  )}
-                </div>
-              </section>
-            </>
+          {mode === 'video' ? (
+            <ReviewGuide
+              key={selection}
+              facts={workflow.facts}
+              step={workflow.step}
+              onStepChange={workflow.setStep}
+              preview={workflow.preview}
+              previewLoading={workflow.previewLoading}
+              previewError={workflow.previewError}
+              onRetryPreview={workflow.retryPreview}
+              decision={decision}
+              newModelFields={workflow.newModelFields}
+              prefillToken={workflow.prefillToken}
+              record={workflow.review}
+              busy={workflow.loading || workflow.saving || workflow.analyzing}
+              disabled={!editable || workflow.analyzing}
+              isDirty={workflow.dirty}
+              onChange={workflow.edit}
+              onAdopt={(fields) => workflow.edit(adoptModelFields(workflow.facts, fields))}
+              onLocationChange={(location) => workflow.edit({ ...workflow.facts, location })}
+              onSave={(state) => void workflow.save(state)}
+              onReload={() => void workflow.refresh()}
+              onRestore={workflow.discard}
+              history={workflow.history}
+              historyLoading={workflow.historyLoading}
+              historyError={workflow.historyError}
+              onLoadHistory={() => void workflow.loadHistory()}
+              explanation={workflow.explanation}
+              onExplain={() => void workflow.explain()}
+              explanationBusy={workflow.explaining}
+            />
+          ) : (
+            <Empty compact>捕获回放后复核</Empty>
           )}
         </aside>
       </div>

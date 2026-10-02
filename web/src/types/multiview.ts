@@ -102,6 +102,30 @@ export interface RuleAssessment {
   explanation_template: string;
 }
 
+export interface OutcomeResolution<T> {
+  status: 'resolved' | 'conditional' | 'unavailable';
+  value: T | null;
+}
+
+export interface ReviewScenario {
+  conditions: string[];
+  restart: RestartType;
+  sanction: SanctionType;
+  remaining_unknowns: string[];
+  rule_trace: RuleTraceEntry[];
+}
+
+export interface ReviewPreview {
+  assessment: RuleAssessment;
+  restart_resolution: OutcomeResolution<RestartType>;
+  sanction_resolution: OutcomeResolution<SanctionType>;
+  scenarios: ReviewScenario[];
+  required_facts: string[];
+  optional_facts: string[];
+  next_fact: string | null;
+  can_finalize: boolean;
+}
+
 export interface ReviewRecord {
   case_id: string;
   analysis_id: string | null;
