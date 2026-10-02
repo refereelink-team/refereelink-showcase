@@ -1,3 +1,8 @@
+import type {
+  CalibrationLabel,
+  CalibrationMetadata,
+  CalibrationSnapshot,
+} from './types/calibration';
 import type { TrackingCase, TrackingFramesPage, TrackingResult } from './types/tracking';
 import type { Catalog, Job, TelemetrySnapshot, TelemetryConfig } from './types';
 import type {
@@ -112,6 +117,33 @@ export const api = {
     request<TrackingFramesPage>(
       `/api/tracking/results/${encodeURIComponent(id)}/frames?offset=${offset}&limit=240&revision=${encodeURIComponent(revision)}`,
     ),
+
+  createCalibration: () => post<CalibrationSnapshot>('/api/calibration/sessions', {}),
+  calibration: (id: string) =>
+    request<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}`),
+  prepareCalibration: (id: string, revision: number, start_ms: number, end_ms: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/prepare`, {
+      revision,
+      start_ms,
+      end_ms,
+    }),
+  labelCalibration: (id: string, revision: number, track_id: number, label: CalibrationLabel) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/labels`, {
+      revision,
+      track_id,
+      label,
+    }),
+  validateCalibration: (id: string, revision: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/validate`, {
+      revision,
+    }),
+  resetCalibration: (id: string, revision: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/reset`, {
+      revision,
+    }),
+  calibrationMetadata: (id: string) =>
+    request<CalibrationMetadata>(`/api/calibration/sessions/${encodeURIComponent(id)}/metadata`),
+
   telemetry: () => request<TelemetrySnapshot>('/api/telemetry/snapshot'),
   telemetryAction: (action: 'demo/start' | 'demo/stop' | 'connect' | 'disconnect') =>
     post<TelemetrySnapshot>(`/api/telemetry/${action}`),

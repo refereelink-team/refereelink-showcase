@@ -4,6 +4,7 @@ import type { TrackingCase, TrackingFrame } from '../types/tracking';
 import { api } from '../api';
 import { Alert, Icon, PageHeader } from '../components/UI';
 import TrackingScene from '../components/tracking/TrackingScene';
+import CalibrationWorkspace from '../components/calibration/CalibrationWorkspace';
 import {
   collectTrackingFrames,
   trackingArtifactId,
@@ -236,7 +237,15 @@ export default function Tracking({ catalog }: { catalog: Catalog | null }) {
     catalog?.clips.filter(
       (clip) => clip.id === 'tracking-projection' || clip.id === 'calibration',
     ) || [];
-  const [selected, setSelected] = useState('tracking-projection');
+  const [selected, setSelected] = useState(() => {
+    try {
+      return sessionStorage.getItem('refereelink:tracking:tab') || 'tracking-projection';
+    } catch {
+      return 'tracking-projection';
+    }
+  });
+  const [calibrationOpened, setCalibrationOpened] = useState(selected === 'calibration');
+  const calibrationClip = clips.find((item) => item.id === 'calibration');
   const clip = clips.find((item) => item.id === selected) || clips[0];
   return (
     <div className="tracking-workspace">
@@ -246,17 +255,30 @@ export default function Tracking({ catalog }: { catalog: Catalog | null }) {
             key={item.id}
             className={clip?.id === item.id ? 'selected' : ''}
             aria-pressed={clip?.id === item.id}
-            onClick={() => setSelected(item.id)}
+            onClick={() => {
+              setSelected(item.id);
+              if (item.id === 'calibration') setCalibrationOpened(true);
+              try {
+                sessionStorage.setItem('refereelink:tracking:tab', item.id);
+              } catch {
+                /* Keep the current tab when browser storage is unavailable. */
+              }
+            }}
           >
-            {item.id === 'calibration' ? '标定视频' : '比赛视频'}
+            {item.id === 'calibration' ? '球队标定' : '比赛视频'}
           </button>
         ))}
       </div>
-      {clip ? (
+      {clip && clip.id !== 'calibration' ? (
         <TrackingSession key={clip.id} clip={clip} />
-      ) : (
+      ) : !clip ? (
         <div className="tracking-inline-empty">正在读取视频…</div>
-      )}
+      ) : null}
+      {calibrationClip && calibrationOpened ? (
+        <div hidden={clip?.id !== 'calibration'}>
+          <CalibrationWorkspace clip={calibrationClip} active={clip?.id === 'calibration'} />
+        </div>
+      ) : null}
     </div>
   );
 }

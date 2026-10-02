@@ -236,3 +236,22 @@ def test_only_allowlisted_registered_results_are_accessible(tracking):
     artifacts[0]['path'] = '../outside/frame-states.jsonl'
     (repository.catalog.root / 'artifacts.json').write_text(json.dumps(artifacts))
     assert client.get('/api/tracking/results/' + _result_id() + '/frames').status_code == 404
+
+
+def test_result_geometry_is_bound_to_the_recorded_run(tracking):
+    client, _, directory, _, report, _ = tracking
+    legacy = client.get('/api/tracking/results/' + _result_id()).json()
+    assert legacy['pitch']['penalty_area_length_m'] == 20.15
+    geometry = dict(legacy['pitch'], length_m=105.0, width_m=68.0,
+                    penalty_area_length_m=16.5, penalty_area_width_m=40.32)
+    report['config'].update(pitch_profile_id='source-informed105', paint_enabled=True)
+    report['config']['pitch_geometry_m'] = geometry
+    (directory / 'report.json').write_text(json.dumps(report))
+    corrected = client.get('/api/tracking/results/' + _result_id()).json()
+    assert corrected['pitch'] == geometry
+    assert corrected['provenance']['pitch_profile_id'] == 'source-informed105'
+    assert corrected['provenance']['paint_enabled'] is True
+    assert corrected['revision'] != legacy['revision']
+    report['config']['pitch_geometry_m']['width_m'] = -70
+    (directory / 'report.json').write_text(json.dumps(report))
+    assert client.get('/api/tracking/results/' + _result_id()).status_code == 409

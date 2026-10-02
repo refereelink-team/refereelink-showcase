@@ -4,7 +4,7 @@ The tracking route renders the original input video, browser SVG detection boxes
 
 ## Operator flow
 
-1. Open **Player tracking** and select the match or calibration input.
+1. Open **Player tracking** and select the match input. The separate calibration tab runs the [native practice workflow](CALIBRATION.md).
 2. A complete, source-verified CUDA result loads automatically when available. Otherwise select **Start tracking**.
 3. The queue reports frame-based progress. A new run hides the previous run's observations while it is pending or failed.
 4. Play or seek the original video. Select a video box, pitch marker, or target row to inspect that observation and its recorded recent trajectory.
@@ -32,7 +32,7 @@ The media element is the playback clock. Browsers that support `requestVideoFram
 
 Detection boxes use the original image pixels and the result's original width/height as their SVG viewBox. The video and overlay preserve the same aspect ratio and use matching letterboxing in fullscreen. A media-size mismatch suppresses overlays and reports an error.
 
-Field coordinates in the extracted pipeline are centimetres. The API converts field positions and velocities to metres once. The native pitch uses the reported geometry: currently 120 m by 70 m, with a 20.15 m by 41 m penalty area. The frontend does not infer standard field dimensions, clamp invalid coordinates into the field, interpolate new tracks, or alter saved observations.
+Field coordinates in the extracted pipeline are centimetres. The API converts field positions and velocities to metres once. Every immutable result supplies the geometry that actually produced its coordinates. Default, unknown, and calibration sources retain the legacy 120 × 70 m template and 20.15 m penalty-area depth. The configured match video opts into the source-informed 105 × 68 m template, 16.5 m penalty-area depth, and independent paint registration only when its actual SHA-256 matches catalog metadata. New reports record the profile, paint flag, and geometry; older reports without geometry retain legacy dimensions. Overall dimensions are configured assumptions, not independently surveyed stadium measurements. The frontend does not infer dimensions, clamp invalid coordinates into the field, interpolate new tracks, or alter saved observations.
 
 ## Verification boundaries
 
@@ -47,7 +47,7 @@ npm run build
 
 Python API tests, job execution, and model checks run on the remote CUDA host. Helper tests cover source-PTS selection, unavailable projections, original-pixel boxes, unknown identity, gap-preserving trajectories, revision integrity, pagination completeness, and late-response rejection. Browser acceptance separately verifies the visible playback, selection, seek, and responsive layout. A prepared-video CUDA run does not establish real-time multi-camera or physical-device acceptance.
 
-## Executed acceptance snapshot
+## Initial native-tracking acceptance snapshot
 
 On 2026-10-02, 80 frontend tests passed together with TypeScript, formatting, production build and whitespace checks. The remote Python software and CUDA-health suite passed 53 tests. Extracted model source was unchanged; deployment source and static-build checksums matched the checked workspace.
 
@@ -59,3 +59,7 @@ Fresh real-model runs on an RTX 5060 Ti processed both supplied inputs without d
 | Match tracking | 682 / 682 | 18.67 | 49.03 / 53.70 ms | 90.25% |
 
 Each API record was compared with its actual pipeline observation and decoded source timestamp, including boxes, identities, roles, teams and metre conversion. A further job submitted from the native browser UI completed automatically without a page reload: 682 processed frames, zero drops and 18.69 processing FPS. Browser inspection verified original media playback, simultaneous image boxes and pitch markers, target selection with metre coordinates, and suppression of previous observations during a new run. Runtime reports and screenshots remain outside Git. These measurements describe prepared-video processing, not 30 FPS live ingestion.
+
+The subsequent calibration migration and projection corrections are documented in
+[CALIBRATION.md](CALIBRATION.md) and [PROJECTION_CORRECTIONS.md](PROJECTION_CORRECTIONS.md).
+The initial availability figures above do not establish independent spatial accuracy.

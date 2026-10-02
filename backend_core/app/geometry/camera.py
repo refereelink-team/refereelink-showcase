@@ -28,10 +28,17 @@ class CameraCalibration:
     def load(cls, path: str | Path) -> "CameraCalibration":
         calibration_path = Path(path)
         if not calibration_path.exists():
-            raise FileNotFoundError(f"Camera calibration file not found: {calibration_path}")
+            raise FileNotFoundError(
+                f"Camera calibration file not found: {calibration_path}"
+            )
 
         with np.load(calibration_path, allow_pickle=False) as data:
-            required = {"camera_matrix", "distortion_coefficients", "image_width", "image_height"}
+            required = {
+                "camera_matrix",
+                "distortion_coefficients",
+                "image_width",
+                "image_height",
+            }
             missing = required.difference(data.files)
             if missing:
                 raise CameraCalibrationError(
@@ -53,7 +60,9 @@ class CameraCalibration:
         if camera_matrix.shape != (3, 3):
             raise CameraCalibrationError("camera_matrix must have shape (3, 3)")
         if distortion.size < 4:
-            raise CameraCalibrationError("distortion_coefficients must contain at least 4 values")
+            raise CameraCalibrationError(
+                "distortion_coefficients must contain at least 4 values"
+            )
         if image_size[0] <= 0 or image_size[1] <= 0:
             raise CameraCalibrationError("Calibration image size must be positive")
 
@@ -74,6 +83,8 @@ class CameraMotionEstimate:
     response: float
     threshold_px: float
     minimum_response: float
+    image_transform: Optional[np.ndarray] = None
+    displacement_px: Optional[float] = None
 
     @property
     def magnitude_px(self) -> float:
@@ -128,7 +139,9 @@ class CameraMotionEstimator:
         target_width = min(width, analysis_width)
         target_height = max(1, int(round(height * target_width / width)))
         scale = target_width / width
-        resized = cv2.resize(gray, (target_width, target_height), interpolation=cv2.INTER_AREA)
+        resized = cv2.resize(
+            gray, (target_width, target_height), interpolation=cv2.INTER_AREA
+        )
         return cv2.GaussianBlur(resized, (3, 3), 0).astype(np.float32), scale
 
     def _prepare(self, frame: np.ndarray) -> tuple[np.ndarray, float]:
@@ -162,7 +175,9 @@ class CameraMotionEstimator:
                 (gray.shape[1], gray.shape[0]), cv2.CV_32F
             )
         try:
-            shift, response = cv2.phaseCorrelate(self._reference_gray, gray, self._window)
+            shift, response = cv2.phaseCorrelate(
+                self._reference_gray, gray, self._window
+            )
         except cv2.error:
             return CameraMotionEstimate(
                 shift_x_px=0.0,
@@ -295,3 +310,147 @@ def build_undistorter(
         enabled=enabled,
         alpha=alpha,
     )
+
+
+class PaintCameraMotionEstimator(CameraMotionEstimator):
+    """Similarity transport isolated from the legacy model path."""
+
+    @staticmethod
+    def _static_mask(frame, shape, excluded_boxes):
+        mask = np.full(shape, 255, dtype=np.uint8)
+        scale = shape[1] / frame.shape[1]
+        if excluded_boxes is not None:
+            for box in excluded_boxes:
+                x1, y1, x2, y2 = np.round(np.asarray(box) * scale).astype(int)
+                cv2.rectangle(
+                    mask,
+                    (max(0, x1 - 3), max(0, y1 - 3)),
+                    (min(shape[1] - 1, x2 + 3), min(shape[0] - 1, y2 + 3)),
+                    0,
+                    -1,
+                )
+        mask[: int(shape[0] * 0.18), : int(shape[1] * 0.4)] = 0
+        return mask
+
+    def mark_reference(self, frame, excluded_boxes=None):
+        super().mark_reference(frame)
+        self._static_reference_mask = self._static_mask(
+            frame, self._reference_gray.shape, excluded_boxes
+        )
+
+    def measure(
+        self, frame: np.ndarray, excluded_boxes=None
+    ) -> Optional[CameraMotionEstimate]:
+        """Measure drift from the last pitch-refresh reference frame."""
+
+        gray, scale = self._prepare(frame)
+        if self._reference_gray is None or self._reference_gray.shape != gray.shape:
+            self._reference_gray = gray
+            return None
+
+        if self._window is None or self._window.shape != gray.shape:
+            self._window = cv2.createHanningWindow(
+                (gray.shape[1], gray.shape[0]), cv2.CV_32F
+            )
+        # Sparse optical flow estimates a similarity transform rather than a
+        # translation alone, so camera zoom and rotation are compensated too.
+        reference_u8 = self._reference_gray.astype(np.uint8)
+        current_u8 = gray.astype(np.uint8)
+        points = cv2.goodFeaturesToTrack(
+            reference_u8,
+            maxCorners=160,
+            qualityLevel=0.02,
+            minDistance=8,
+            mask=getattr(self, "_static_reference_mask", None),
+        )
+        if points is not None and len(points) >= 8:
+            current, status, _ = cv2.calcOpticalFlowPyrLK(
+                reference_u8, current_u8, points, None
+            )
+            back, back_status, _ = cv2.calcOpticalFlowPyrLK(
+                current_u8, reference_u8, current, None
+            )
+            valid = (status.reshape(-1) > 0) & (back_status.reshape(-1) > 0)
+            valid &= (
+                np.linalg.norm(points.reshape(-1, 2) - back.reshape(-1, 2), axis=1)
+                < 1.5
+            )
+            destination_mask = self._static_mask(frame, gray.shape, excluded_boxes)
+            xy = np.round(current.reshape(-1, 2)).astype(int)
+            inside = (
+                (xy[:, 0] >= 0)
+                & (xy[:, 0] < gray.shape[1])
+                & (xy[:, 1] >= 0)
+                & (xy[:, 1] < gray.shape[0])
+            )
+            allowed = np.zeros(len(valid), dtype=bool)
+            allowed[inside] = destination_mask[xy[inside, 1], xy[inside, 0]] > 0
+            valid &= allowed
+            if np.count_nonzero(valid) >= 8:
+                source = points.reshape(-1, 2)[valid]
+                destination = current.reshape(-1, 2)[valid]
+                affine, mask = cv2.estimateAffinePartial2D(
+                    source, destination, method=cv2.RANSAC, ransacReprojThreshold=2.0
+                )
+                if affine is not None and mask is not None:
+                    accepted = mask.reshape(-1).astype(bool)
+                    support = source[accepted]
+                    ratio = float(np.mean(accepted))
+                    span = np.ptp(support, axis=0) if len(support) else np.zeros(2)
+                    if (
+                        len(support) >= 8
+                        and ratio >= 0.6
+                        and np.all(span >= np.asarray(gray.shape[::-1]) * 0.2)
+                    ):
+                        transform = np.eye(3, dtype=np.float64)
+                        transform[:2] = affine
+                        transform[:2, 2] /= max(scale, 1e-6)
+                        height, width = frame.shape[:2]
+                        probes = np.asarray(
+                            [
+                                [0, 0],
+                                [width, 0],
+                                [0, height],
+                                [width, height],
+                                [width / 2, height / 2],
+                            ],
+                            dtype=np.float64,
+                        )
+                        moved = cv2.perspectiveTransform(
+                            probes.reshape(-1, 1, 2), transform
+                        ).reshape(-1, 2)
+                        displacement = float(
+                            np.percentile(np.linalg.norm(moved - probes, axis=1), 75)
+                        )
+                        center_shift = moved[-1] - probes[-1]
+                        return CameraMotionEstimate(
+                            float(center_shift[0]),
+                            float(center_shift[1]),
+                            ratio,
+                            self.threshold_px,
+                            self.minimum_response,
+                            transform,
+                            displacement,
+                        )
+        try:
+            shift, response = cv2.phaseCorrelate(
+                self._reference_gray, gray, self._window
+            )
+        except cv2.error:
+            return CameraMotionEstimate(
+                shift_x_px=0.0,
+                shift_y_px=0.0,
+                response=0.0,
+                threshold_px=self.threshold_px,
+                minimum_response=self.minimum_response,
+            )
+
+        # The reference and current frames have the same shape here.  Use the
+        # current scale to convert the low-resolution phase shift to pixels.
+        return CameraMotionEstimate(
+            shift_x_px=float(shift[0] / max(scale, 1e-6)),
+            shift_y_px=float(shift[1] / max(scale, 1e-6)),
+            response=float(response),
+            threshold_px=self.threshold_px,
+            minimum_response=self.minimum_response,
+        )

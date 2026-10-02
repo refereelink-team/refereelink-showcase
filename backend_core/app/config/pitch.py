@@ -92,3 +92,21 @@ class SoccerPitchConfiguration:
         "#FF6347", "#FF6347", "#FF6347", "#FF6347", "#FF6347", "#FF6347",
         "#00BFFF", "#00BFFF"
     ])
+
+
+PITCH_PROFILE_IDS = ("legacy", "source-informed105")
+
+
+def build_pitch_profile(profile_id: str = "legacy") -> tuple[SoccerPitchConfiguration, bool]:
+    """Return a fresh source-configured geometry and paint opt-in flag.
+
+    The 105 x 68 profile is a venue-informed assumption, not a measurement.
+    Unknown callers keep the original template and model behavior.
+    """
+    if profile_id == "legacy":
+        return SoccerPitchConfiguration(), False
+    if profile_id == "source-informed105":
+        return SoccerPitchConfiguration(
+            length=10500, width=6800, penalty_box_length=1650, penalty_box_width=4032
+        ), True
+    raise ValueError(f"Unknown pitch profile: {profile_id}")

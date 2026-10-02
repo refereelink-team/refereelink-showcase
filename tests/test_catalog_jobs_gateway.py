@@ -157,3 +157,64 @@ def test_output_validation_rejects_false_success(settings, tmp_path, defect):
     (tmp_path / 'report.json').write_text(json.dumps(report))
     with pytest.raises(RuntimeError):
         manager._validate_output(tmp_path, {'case_id': 'calibration', 'mode': 'foul_only'})
+
+
+def test_source_profile_requires_matching_allowlisted_media(settings, monkeypatch):
+    import hashlib
+    catalog = MediaCatalog(settings.media_root)
+    source = settings.media_root / 'input/tracking-projection.mp4'
+    source.write_bytes(b'software fixture, not football footage')
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    clip = catalog.clip('tracking-projection')
+    unmatched = JobManager(settings, catalog).submit('tracking', clip['id'])
+    assert unmatched['pitch_profile_id'] == 'legacy'
+    assert unmatched['paint_enabled'] is False
+    assert unmatched['source_sha256'] == digest
+    monkeypatch.setitem(clip, 'profile_source_sha256', digest)
+    matched = JobManager(settings, catalog).submit('tracking', clip['id'])
+    assert matched['pitch_profile_id'] == 'source-informed105'
+    assert matched['paint_enabled'] is True
+    assert matched['source_sha256'] == digest
+    source.write_bytes(b'replaced source must not inherit the previous geometry')
+    replacement = JobManager(settings, catalog).submit('tracking', clip['id'])
+    assert replacement['pitch_profile_id'] == 'legacy'
+    assert replacement['paint_enabled'] is False
+
+
+def test_calibration_and_foul_only_keep_legacy_profile(settings, monkeypatch):
+    import hashlib
+    catalog = MediaCatalog(settings.media_root)
+    manager = JobManager(settings, catalog)
+    calibration = manager.submit('tracking', 'calibration')
+    assert calibration['pitch_profile_id'] == 'legacy'
+    assert calibration['paint_enabled'] is False
+    source = settings.media_root / 'input/tracking-projection.mp4'
+    source.write_bytes(b'fixture')
+    monkeypatch.setitem(catalog.clip('tracking-projection'), 'profile_source_sha256',
+                        hashlib.sha256(source.read_bytes()).hexdigest())
+    foul = manager.submit('foul', 'tracking-projection')
+    assert foul['pitch_profile_id'] == 'legacy' and foul['paint_enabled'] is False
+
+
+@pytest.mark.parametrize('defect', ['profile', 'paint_enabled', 'source'])
+def test_output_rejects_mismatched_source_profile_before_registering(settings, tmp_path, defect):
+    import json
+    manager = JobManager(settings, MediaCatalog(settings.media_root))
+    job = {'case_id': 'tracking-projection', 'mode': 'projection_only',
+           'pitch_profile_id': 'source-informed105', 'paint_enabled': True,
+           'source_sha256': 'a' * 64}
+    report = {'status': 'complete', 'mode': 'projection_only',
+              'environment': {'device': 'cuda'}, 'decoded_frames': 682,
+              'processed_frames': 682, 'output_frames': 682, 'dropped_frame_count': 0,
+              'foul_errors': [], 'source': {'sha256': 'a' * 64},
+              'config': {'pitch_enabled': True, 'foul_enabled': False,
+                         'pitch_profile_id': 'source-informed105', 'paint_enabled': True}}
+    if defect == 'profile':
+        report['config']['pitch_profile_id'] = 'legacy'
+    elif defect == 'paint_enabled':
+        report['config']['paint_enabled'] = False
+    else:
+        report['source']['sha256'] = 'b' * 64
+    (tmp_path / 'report.json').write_text(json.dumps(report))
+    with pytest.raises(RuntimeError, match='source-bound geometry profile'):
+        manager._validate_output(tmp_path, job)

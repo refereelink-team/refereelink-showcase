@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """CUDA-only, reproducible single-video and batch ablations.
 
 Run on the GPU host. Production InferencePipeline performs detection,
@@ -35,7 +36,8 @@ from app.pipeline.buffer import PipelineMode
 from app.pipeline.engine import InferencePipeline
 from app.pipeline.source import LocalFileSource
 from app.state.store import StateStore
-from tools.render_diagnostic_video import _make_contact_sheet, _render_panel, PITCH_CONFIG
+from tools.render_diagnostic_video import _make_contact_sheet, _render_panel
+from app.config.pitch import PITCH_PROFILE_IDS, build_pitch_profile
 
 MODES = ("foul_only", "projection_only", "combined")
 VIDEOS = {
@@ -209,7 +211,7 @@ def text(frame, message: str, xy: tuple[int, int], color=(255, 255, 255), scale=
     cv2.putText(frame, message, xy, cv2.FONT_HERSHEY_SIMPLEX, scale, color, 1, cv2.LINE_AA)
 
 
-def render(frame, state, mode: str, record: dict | None, held_event, hold_until: int):
+def render(frame, state, mode: str, record: dict | None, held_event, hold_until: int, pitch_config):
     annotated = frame.copy()
     for player in state.players:
         color = (0, 215, 255) if player.role.value == "referee" else {"home": (147, 20, 255), "away": (255, 191, 0)}.get(player.team.value, (175, 175, 175))
@@ -230,13 +232,13 @@ def render(frame, state, mode: str, record: dict | None, held_event, hold_until:
         text(annotated, "foul model disabled" if mode == "projection_only" else "foul model warming up (24-frame window)", (8, 35), (195, 195, 195), 0.43)
     if mode != "foul_only":
         panel_width = max(420, min(560, frame.shape[1] // 3))
-        combined = _render_panel(annotated, state, panel_width)
+        combined = _render_panel(annotated, state, panel_width, pitch_config=pitch_config)
         panel = combined[:, frame.shape[1]:]
         # Match the production diagnostic panel's pitch coordinate transform.
         padding, pitch_top, pitch_bottom = 18, 160, frame.shape[0] - 28
-        scale = max(0.01, min((panel_width - 2 * padding - 2) / PITCH_CONFIG.length, (pitch_bottom - pitch_top - 2 * padding) / PITCH_CONFIG.width))
-        pitch_w = int(PITCH_CONFIG.length * scale + 2 * padding)
-        pitch_h = int(PITCH_CONFIG.width * scale + 2 * padding)
+        scale = max(0.01, min((panel_width - 2 * padding - 2) / pitch_config.length, (pitch_bottom - pitch_top - 2 * padding) / pitch_config.width))
+        pitch_w = int(pitch_config.length * scale + 2 * padding)
+        pitch_h = int(pitch_config.width * scale + 2 * padding)
         px = max((panel_width - pitch_w) // 2, 0)
         py = pitch_top + max((pitch_bottom - pitch_top - pitch_h) // 2, 0)
         for player in state.players:
@@ -249,6 +251,8 @@ def render(frame, state, mode: str, record: dict | None, held_event, hold_until:
 
 
 def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
+    pitch_profile_id = getattr(args, "pitch_profile", "legacy")
+    pitch_config, paint_enabled = build_pitch_profile(pitch_profile_id)
     job_started_at = datetime.now(timezone.utc).isoformat()
     if output.exists() and (output / "report.json").exists() and not args.overwrite:
         raise RuntimeError(f"Existing completed output: {output}; use --overwrite explicitly")
@@ -280,7 +284,7 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     captured = {}
     pipeline = InferencePipeline(source, store, device="cuda", mode=PipelineMode.OFFLINE,
         player_model_path=args.player_model, pitch_model_path=args.pitch_model,
-        enable_pitch=mode != "foul_only", camera_calibration_path=None, enable_undistortion=False,
+        enable_pitch=mode != "foul_only", pitch_configuration=pitch_config, enable_paint_projection=paint_enabled, camera_calibration_path=None, enable_undistortion=False,
         team_calibration_path=args.bundle, enable_foul_detection=mode != "projection_only",
         foul_detector=detector, foul_checkpoint_path=args.foul_model,
         foul_confidence_threshold=args.threshold, inference_backend="pytorch",
@@ -342,7 +346,7 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
                     line_json(events_log, {"media_pts_seconds": meta["decoded_timestamps_ms"][frames - 1] / 1000, "source_frame_id": state.frame_id, "event": event.model_dump(mode="json")})
             line_json(frames_log, state.model_dump(mode="json"))
             line_json(timings_log, {"frame_id": state.frame_id, "source_pts_ms": meta["decoded_timestamps_ms"][frames - 1], "synchronized_pipeline_latency_ms": latency, "processed_timestamp_ms": state.processed_timestamp_ms, "read_to_processed_ms": state.processed_timestamp_ms - state.capture_timestamp_ms, "homography_status": state.homography_status.value, "tracked_persons": len(state.players), "short_gap_missing_tracks": short_gaps})
-            final, held_event, hold_until = render(captured["frame"], state, mode, predictor.last_record if predictor else None, held_event, hold_until)
+            final, held_event, hold_until = render(captured["frame"], state, mode, predictor.last_record if predictor else None, held_event, hold_until, pitch_config)
             writer.write(final)
             if frames % 120 == 0:
                 print(json.dumps({"status": "progress", "input": input_path.name, "mode": mode, "frames": frames, "foul_windows": predictor.records if predictor else 0, "candidates": candidate_count}), flush=True)
@@ -369,7 +373,15 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         "source_code": json.loads((ROOT / "source-manifest.json").read_text()) if (ROOT / "source-manifest.json").exists() else {"root": str(ROOT)},
         "environment": {"hostname": subprocess.check_output(["hostname"], text=True).strip(), "gpu": torch.cuda.get_device_name(), "device": "cuda", "python": sys.version, "torch": torch.__version__, "cuda_runtime": torch.version.cuda, "opencv": cv2.__version__},
         "source": {key: value for key, value in meta.items() if key != "decoded_timestamps_ms"},
-        "config": {"pitch_enabled": mode != "foul_only", "foul_enabled": mode != "projection_only", "undistortion_enabled": False, "imgsz": 640, "pitch_interval": 5, "foul_window": 24, "foul_stride": 8, "foul_tensor_frames": 16, "foul_replicated_single_view_slots": 4, "foul_confidence_threshold": args.threshold, "foul_cooldown_frames": 25},
+        "config": {"pitch_profile_id": pitch_profile_id, "paint_enabled": core.enable_paint_projection, "pitch_geometry_m": {
+            "length_m": pitch_config.length / 100.0, "width_m": pitch_config.width / 100.0,
+            "penalty_area_length_m": pitch_config.penalty_box_length / 100.0,
+            "penalty_area_width_m": pitch_config.penalty_box_width / 100.0,
+            "goal_area_length_m": pitch_config.goal_box_length / 100.0,
+            "goal_area_width_m": pitch_config.goal_box_width / 100.0,
+            "center_circle_radius_m": pitch_config.centre_circle_radius / 100.0,
+            "penalty_spot_distance_m": pitch_config.penalty_spot_distance / 100.0,
+            "goal_width_m": 7.32}, "pitch_enabled": mode != "foul_only", "foul_enabled": mode != "projection_only", "undistortion_enabled": False, "imgsz": 640, "pitch_interval": 5, "foul_window": 24, "foul_stride": 8, "foul_tensor_frames": 16, "foul_replicated_single_view_slots": 4, "foul_confidence_threshold": args.threshold, "foul_cooldown_frames": 25},
         "models": {name: {"path": path, "sha256": sha256(Path(path))} for name, path in (("player", args.player_model), ("pitch", args.pitch_model), ("foul", args.foul_model))},
         "bundle": {"path": args.bundle, "sha256": sha256(Path(args.bundle)), "match_id": bundle.match_id, "validation": asdict(bundle.validation_report), "prototypes": [f"{team.value}/{role.value}" for team, role in bundle.prototypes]},
         "checkpoint_validation": predictor.load_state_result if predictor else None,
@@ -428,6 +440,7 @@ def main() -> int:
     parser.add_argument("--foul-code", default=os.environ.get("SC_MVFOUL_CODE_PATH", str(ROOT / "third_party" / "sn-mvfoul" / "VARS model")))
     parser.add_argument("--threshold", type=float, default=0.48)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--pitch-profile", choices=PITCH_PROFILE_IDS, default="legacy")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING)
     if args.batch:

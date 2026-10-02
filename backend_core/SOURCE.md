@@ -15,8 +15,10 @@ Upstream repository: https://github.com/refereelink-team/refereelink-backend
   validation and identical-model CUDA FP32 retry for VARS FP16 numeric overflow.
 
 `source-manifest.json` records every copied file's original and extracted SHA-256,
-the dependency edges, upstream runner SHA, and the integration patch SHA. Production
-algorithm files are unchanged by extraction. Two package initializers omit unrelated
+the dependency edges, upstream runner SHA, and the integration patch SHA. Original
+extraction preserved production algorithm bytes. Subsequent local production
+corrections are recorded separately from the original source identities and retain
+verifiable current hashes in the manifest. Two package initializers omit unrelated
 service exports (`app.field_ingest`, `app.services`), and `tools/__init__.py` is added.
 No original server/API/admin routes, frontend, multi-view review service, model
 weights, calibration files, user videos, tokens, or transport session data are bundled.
@@ -61,3 +63,26 @@ the original backend service. No temporary night-source checkout is required.
 ## Source-byte preservation
 
 Extracted Python files retain their original line endings and terminal blank lines so their recorded SHA-256 provenance remains verifiable. `.gitattributes` disables line-ending conversion for these files and recognizes their historical whitespace. New repository-owned code follows `.editorconfig`; do not reformat extracted files without deliberately updating provenance and validating the change.
+
+## Isolated calibration and geometry corrections
+
+The showcase reuses the extracted team-calibration services with independent session-owned
+paths. A local correction adds an opt-in clean review video, verified source FPS,
+and cooperative cancellation to `app/classification/team_calibration/clip.py`;
+legacy callers retain their existing defaults.
+The clean clip prevents rendered IDs and boxes from entering jersey feature extraction.
+
+Geometry changes are maintained separately from the original PR identities. The manifest
+records their original source hashes, current extracted hashes, and local modification
+descriptions. The canonical backend checkout may be older than the integrated extracted
+core; it must not be overwritten wholesale to imitate source equality.
+
+The new `app/geometry/pitch_lines.py` is a post-extraction addition, with no
+invented original-source identity. Source-bound geometry profiles, isolated
+field-marking registration, explicit coordinate-transition gaps, and per-result
+geometry recording are local changes. `camera.py` adds a separate paint-only
+similarity estimator; the inherited model estimator behavior remains unchanged,
+although the file bytes have changed. Pipeline and renderer extensions explicitly
+pass the selected configuration. Default and unknown inputs retain legacy
+behavior. See [Projection corrections](../docs/PROJECTION_CORRECTIONS.md) for
+measurements and limitations.

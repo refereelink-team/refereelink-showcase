@@ -68,6 +68,7 @@ class CalibrationClipService:
     ) -> None:
         self.session = session
         self._lock = threading.RLock()
+        self._cancel_event = threading.Event()
         self._source_path: Optional[Path] = None
         self._source_info: Optional[SourceInfo] = None
         self._config: Any = None
@@ -165,6 +166,7 @@ class CalibrationClipService:
                 review_video_url="/api/team-calibration/clip/video",
                 metadata_url="/api/team-calibration/clip/metadata",
             )
+            self._cancel_event.clear()
             self._worker = threading.Thread(
                 target=self._process_job,
                 args=(job,),
@@ -173,6 +175,10 @@ class CalibrationClipService:
             )
             self._worker.start()
             return self.session.snapshot()
+
+    def cancel_processing(self) -> None:
+        """Request cancellation between model forwards without releasing active work."""
+        self._cancel_event.set()
 
     def status(self) -> dict[str, Any]:
         return self.session.snapshot()
@@ -301,7 +307,10 @@ class CalibrationClipService:
         source = cv2.VideoCapture(job.source_path)
         if not source.isOpened():
             raise ValueError(f"unable to open video source: {job.source_path}")
-        fps = max(float(source.get(cv2.CAP_PROP_FPS) or 0.0), 1.0)
+        config = getattr(self, "_config", None)
+        # Verified nominal cadence avoids misleading OpenCV container averages.
+        fps = max(float(getattr(config, "calibration_source_fps", None)
+                        or source.get(cv2.CAP_PROP_FPS) or 0.0), 1.0)
         width = int(source.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         height = int(source.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         start_frame = max(0, int(round(job.start_ms * fps / 1000.0)))
@@ -340,6 +349,8 @@ class CalibrationClipService:
         processed = 0
         try:
             while processed < expected_frames:
+                if self._cancel_event.is_set():
+                    raise RuntimeError("Calibration clip processing cancelled")
                 ok, frame = source.read()
                 if not ok or frame is None:
                     break
@@ -390,7 +401,8 @@ class CalibrationClipService:
                         summary["representative_timestamp_ms"] = timestamp_ms
                         summary["representative_bbox"] = bbox
                         summary["representative_quality_score"] = round(quality.score, 4)
-                    _draw_overlay(output, bbox, track_id)
+                    if not getattr(config, "clean_calibration_video", False):
+                        _draw_overlay(output, bbox, track_id)
                 writer.write(output)
                 frames.append(
                     {

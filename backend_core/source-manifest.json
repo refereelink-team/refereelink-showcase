@@ -64,8 +64,12 @@
     },
     "app/classification/team_calibration/clip.py": {
       "source_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
-      "extracted_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
-      "modified_for_extraction": false
+      "extracted_sha256": "83a05c1ad2f772ed752b209adf0dfa32b04ab2537e12c5bf9b3b4a43686e5a62",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Opt-in clean review media, verified source FPS, and cooperative cancellation for independent calibration practice sessions.",
+      "canonical_checkout_sha256": "83a05c1ad2f772ed752b209adf0dfa32b04ab2537e12c5bf9b3b4a43686e5a62",
+      "matches_canonical_checkout": true
     },
     "app/classification/team_calibration/color_features.py": {
       "source_sha256": "563d23ad06b31189df3b417dc2e587f151f5b69d055afd683f10d591925228e6",
@@ -129,8 +133,12 @@
     },
     "app/config/pitch.py": {
       "source_sha256": "f8a6af7f6c697f923b02e8074a594518021f252f1fc00abd9ba49622a4666623",
-      "extracted_sha256": "f8a6af7f6c697f923b02e8074a594518021f252f1fc00abd9ba49622a4666623",
-      "modified_for_extraction": false
+      "extracted_sha256": "5a45e9d0108508ec3a403b2983d204ebbd3c2a76feb27f52c50b04c8351ab025",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Add explicitly selected source-informed geometry factory while preserving legacy defaults and unknown-source behavior.",
+      "canonical_checkout_sha256": "5a45e9d0108508ec3a403b2983d204ebbd3c2a76feb27f52c50b04c8351ab025",
+      "matches_canonical_checkout": true
     },
     "app/constants/__init__.py": {
       "source_sha256": "a98a5045b9bbe03e6e344b16a8f814116fa553754d6e2ff2815cf78aad3aad72",
@@ -194,13 +202,31 @@
     },
     "app/geometry/camera.py": {
       "source_sha256": "cf0e9509c982c993128e136e7bb64af7cf667355bf0dda1d79dec7f59d321239",
-      "extracted_sha256": "cf0e9509c982c993128e136e7bb64af7cf667355bf0dda1d79dec7f59d321239",
-      "modified_for_extraction": false
+      "extracted_sha256": "6a09be11ddc2c78b83cecd41c700ad3f41dfc69314d739b25add31a91f12d0e0",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Add isolated paint-only similarity motion estimation; original model estimator behavior is preserved.",
+      "canonical_checkout_sha256": "6a09be11ddc2c78b83cecd41c700ad3f41dfc69314d739b25add31a91f12d0e0",
+      "matches_canonical_checkout": true
+    },
+    "app/geometry/pitch_lines.py": {
+      "source_sha256": null,
+      "extracted_sha256": "f6f120f0eb78e2df97e3c5c59d4371917d83d70f3bf13d0e8ff9bb29db78ad0f",
+      "modified_for_extraction": false,
+      "added_after_extraction": true,
+      "modified_after_extraction": true,
+      "local_modification": "New bounded independent grass-adjacent paint-line registration for nested goal and penalty areas, with isolated motion support.",
+      "canonical_checkout_sha256": "f6f120f0eb78e2df97e3c5c59d4371917d83d70f3bf13d0e8ff9bb29db78ad0f",
+      "matches_canonical_checkout": true
     },
     "app/geometry/pitch_projection.py": {
       "source_sha256": "cbb1b540e50656a78974418163eaeaf015dba1c53c1dd59b1e2f75a3d6ae29f8",
-      "extracted_sha256": "cbb1b540e50656a78974418163eaeaf015dba1c53c1dd59b1e2f75a3d6ae29f8",
-      "modified_for_extraction": false
+      "extracted_sha256": "b8a5d60554e8c912fb9de35ed34cc4609275129fe9da87c36bf03e7d600e2918",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Expose registration metadata while preserving the inherited model control path.",
+      "canonical_checkout_sha256": "090f70d038feb71c60f7270c0ff11513fe4a666442595bcb5494209d3177b249",
+      "matches_canonical_checkout": false
     },
     "app/geometry/position_filter.py": {
       "source_sha256": "52589495608af3af919ed09f2277cef96a3140c63b8c9cc2c525fee653f7f873",
@@ -219,8 +245,12 @@
     },
     "app/pipeline/engine.py": {
       "source_sha256": "1ecb532c7247b504b68219f565f1a58a97944167ade7de7215787c5325ebd0c1",
-      "extracted_sha256": "1ecb532c7247b504b68219f565f1a58a97944167ade7de7215787c5325ebd0c1",
-      "modified_for_extraction": false
+      "extracted_sha256": "26f7d331721e65322918fcec4784ff36e70f811f6f2a9e1903da20608c038e32",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Forward optional geometry and explicitly gated paint processing to the shared inference core.",
+      "canonical_checkout_sha256": "c221414da894032810908b9e5b39c9addf3f3d43db026fe381ef08e03f131243",
+      "matches_canonical_checkout": false
     },
     "app/pipeline/recorder.py": {
       "source_sha256": "5986878e9f74995155a2b972554c374e3793dd3adee32a614aeddf5e676a6754",
@@ -274,8 +304,12 @@
     },
     "app/vision/core.py": {
       "source_sha256": "176458a2fdb65deea91d5c70d208abc566d4cf08d64196bcfa8ad3622822ae7e",
-      "extracted_sha256": "176458a2fdb65deea91d5c70d208abc566d4cf08d64196bcfa8ad3622822ae7e",
-      "modified_for_extraction": false
+      "extracted_sha256": "28a0b7839de2a91189f011817df37a40badd73e81aef62aa75d00df41c21f8f6",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Integrate isolated field-marking registration, independent model and paint state, and explicit coordinate-source observation gaps.",
+      "canonical_checkout_sha256": "9e6ad4c50cb531a5a2a3cf52e5bbf3afbe7be37fef6d3403a59fb0f7d6d497b0",
+      "matches_canonical_checkout": false
     },
     "app/vision/display.py": {
       "source_sha256": "8821d0145dfa13f3f8d6a90676aef12de084670c5fa54c1e366b888a01f40158",
@@ -304,18 +338,25 @@
     },
     "tools/render_diagnostic_video.py": {
       "source_sha256": "ef3eaca701c8491a7e4230482364fd44bf59e3850d2a1d756df56613e9d5fd0b",
-      "extracted_sha256": "ef3eaca701c8491a7e4230482364fd44bf59e3850d2a1d756df56613e9d5fd0b",
-      "modified_for_extraction": false
+      "extracted_sha256": "d90fb2c65ac2824ee6a3db1e61e3e469d7520c1ba0ec6a490712f92b69233c88",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Render using the same explicitly supplied runtime geometry as inference.",
+      "canonical_checkout_sha256": "bc1098b911c7a9a79eaa2e6794b0dba209a2542257b7c74b6ce711a7e3b09126",
+      "matches_canonical_checkout": false
     },
     "tools/run_night_ablation.py": {
       "source_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245",
-      "extracted_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245",
-      "modified_for_extraction": false
+      "extracted_sha256": "34dcca4525d205afbd52752a3f596f9344d3e6e7a83624007237d881f5a74134",
+      "modified_for_extraction": false,
+      "modified_after_extraction": true,
+      "local_modification": "Select explicit geometry and paint profiles with legacy defaults, pass them through inference and rendering, and record them in immutable results."
     }
   },
   "dependency_edges": {
     "tools/run_night_ablation.py": [
       "app/classification/team_calibration/bundle.py",
+      "app/config/pitch.py",
       "app/foul_detection/detector.py",
       "app/foul_detection/predictor.py",
       "app/pipeline/buffer.py",
@@ -351,6 +392,7 @@
       "app/classification/team_calibration/predictor.py",
       "app/classification/team_calibration/role_predictor.py",
       "app/classification/team_calibration/runtime.py",
+      "app/config/pitch.py",
       "app/constants/paths.py",
       "app/events/engine.py",
       "app/field_ingest/frames.py",
@@ -421,6 +463,7 @@
       "app/constants/classes.py",
       "app/constants/paths.py",
       "app/geometry/camera.py",
+      "app/geometry/pitch_lines.py",
       "app/geometry/pitch_projection.py",
       "app/geometry/position_filter.py",
       "app/vision/backends.py",
@@ -512,7 +555,10 @@
       "app/classification/team_calibration/types.py"
     ],
     "app/services/__init__.py": [],
-    "app/geometry/__init__.py": []
+    "app/geometry/__init__.py": [],
+    "app/geometry/pitch_lines.py": [
+      "app/config/pitch.py"
+    ]
   },
   "external_import_names": [
     "__future__",
@@ -526,6 +572,7 @@
     "enum",
     "gc",
     "hashlib",
+    "itertools",
     "json",
     "logging",
     "model",
@@ -547,5 +594,19 @@
     "typing",
     "ultralytics",
     "uuid"
-  ]
+  ],
+  "local_corrections": {
+    "description": "Isolated calibration practice and source-validated projection corrections. Original upstream identities remain unchanged.",
+    "files": [
+      "app/classification/team_calibration/clip.py",
+      "app/config/pitch.py",
+      "app/geometry/camera.py",
+      "app/geometry/pitch_lines.py",
+      "app/geometry/pitch_projection.py",
+      "app/pipeline/engine.py",
+      "app/vision/core.py",
+      "tools/render_diagnostic_video.py",
+      "tools/run_night_ablation.py"
+    ]
+  }
 }

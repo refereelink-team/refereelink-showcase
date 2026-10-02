@@ -1,4 +1,5 @@
 from __future__ import annotations
+import hashlib
 import json
 import os
 import queue
@@ -21,6 +22,7 @@ class JobManager:
     def __init__(self, settings: Settings, catalog: MediaCatalog):
         self.settings, self.catalog = settings, catalog
         self.lock = threading.RLock()
+        self.gpu_lease = threading.Lock()
         self.queue = queue.Queue(maxsize=3)
         self.stopped = threading.Event()
         self.jobs = {}
@@ -51,8 +53,18 @@ class JobManager:
     def submit(self, kind: str, case_id: str):
         if kind not in MODES:
             raise HTTPException(422, 'Unsupported experiment kind')
-        self.catalog.clip(case_id)
-        self.catalog.safe_path('input/' + case_id + '.mp4')
+        clip = self.catalog.clip(case_id)
+        source = self.catalog.safe_path('input/' + case_id + '.mp4')
+        digest = hashlib.sha256()
+        with source.open('rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        source_sha256 = digest.hexdigest()
+        profile = 'legacy'
+        if (MODES[kind] != 'foul_only'
+                and clip.get('pitch_profile_id') == 'source-informed105'
+                and source_sha256 == clip.get('profile_source_sha256')):
+            profile = 'source-informed105'
         runner = self.settings.core_root / 'tools/run_night_ablation.py'
         if not runner.exists():
             raise HTTPException(503, 'CUDA experiment runner is not installed')
@@ -66,7 +78,9 @@ class JobManager:
                 return dict(active)
             job = {'id': uuid.uuid4().hex, 'kind': kind, 'case_id': case_id,
                    'mode': MODES[kind], 'status': 'queued', 'progress': 0.0,
-                   'created_at': time.time(), 'error': None, 'artifacts': [], 'summary': None}
+                   'created_at': time.time(), 'error': None, 'artifacts': [], 'summary': None,
+                   'pitch_profile_id': profile, 'paint_enabled': profile != 'legacy',
+                   'source_sha256': source_sha256}
             try:
                 self.queue.put_nowait(job['id'])
             except queue.Full as exc:
@@ -158,6 +172,11 @@ class JobManager:
                 or config.get('foul_enabled') != (job['mode'] != 'projection_only')
                 or report.get('foul_errors')):
             raise RuntimeError('CUDA result failed completeness or experiment-mode validation')
+        if job.get('pitch_profile_id') is not None and (
+                config.get('pitch_profile_id') != job['pitch_profile_id']
+                or config.get('paint_enabled') is not job['paint_enabled']
+                or report.get('source', {}).get('sha256') != job['source_sha256']):
+            raise RuntimeError('CUDA result does not match its source-bound geometry profile')
         if job['mode'] != 'projection_only' and report.get('foul_actual_forward_windows', 0) < 1:
             raise RuntimeError('No real foul-model forward was recorded')
         video = directory / 'annotated.mp4'
@@ -181,16 +200,21 @@ class JobManager:
                 if self.stopped.is_set():
                     self.queue.task_done()
                     break
-                job.update(status='running', progress=0.02, started_at=time.time())
-                self._save(job)
             directory = self.catalog.root / 'jobs' / job_id
             process = None
+            self.gpu_lease.acquire()
             try:
+                with self.lock:
+                    if self.stopped.is_set():
+                        raise RuntimeError('Experiment service stopped')
+                    job.update(status='running', progress=0.02, started_at=time.time())
+                    self._save(job)
                 directory.mkdir(parents=True, exist_ok=True)
                 args = [str(self.settings.core_python), '-B',
                         str(self.settings.core_root / 'tools/run_night_ablation.py'),
                         '--input', str(self.catalog.safe_path('input/' + job['case_id'] + '.mp4')),
                         '--mode', job['mode'], '--output', str(directory),
+                        '--pitch-profile', job.get('pitch_profile_id', 'legacy'),
                         '--bundle', str(self.settings.bundle),
                         '--player-model', str(self.settings.player_model),
                         '--pitch-model', str(self.settings.pitch_model),
@@ -244,4 +268,5 @@ class JobManager:
                     job['finished_at'] = time.time()
                     self.process = None
                     self._save(job)
+                self.gpu_lease.release()
                 self.queue.task_done()

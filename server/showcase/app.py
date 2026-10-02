@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 from .catalog import MediaCatalog
+from .calibration import CalibrationManager, create_calibration_router
 from .gateway import create_gateway
 from .jobs import JobManager
 from .settings import Settings
@@ -24,6 +25,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_environment()
     catalog = MediaCatalog(settings.media_root)
     manager = JobManager(settings, catalog)
+    calibration = CalibrationManager(settings, catalog, manager.gpu_lease)
     client = httpx.AsyncClient(timeout=httpx.Timeout(180, connect=8))
     gpu = {'device': 'unverified', 'host': socket.gethostname(), 'cuda_available': False}
 
@@ -38,10 +40,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if telemetry is not None:
             await telemetry.start()
         manager.start()
+        calibration.start()
         try:
             yield
         finally:
+            calibration.request_stop()
             manager.stop()
+            calibration.stop()
             await client.aclose()
             telemetry = getattr(app.state, 'telemetry', None)
             if telemetry is not None:
@@ -49,6 +54,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title='RefereeLink Showcase', lifespan=lifespan)
     app.state.catalog, app.state.jobs = catalog, manager
+    app.state.calibration = calibration
+    app.include_router(create_calibration_router(calibration))
     app.state.tracking = TrackingRepository(catalog, manager)
     app.include_router(create_tracking_router(app.state.tracking))
     app.include_router(create_gateway(client, settings.upstream))

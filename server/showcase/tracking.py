@@ -24,7 +24,7 @@ from .catalog import MediaCatalog
 from .jobs import JobManager
 
 
-# Match backend_core/app/config/pitch.py. The extracted projector uses centimetres.
+# Legacy runs omitted geometry from their report. Preserve their recorded coordinate model.
 PITCH = {
     'length_m': 120.0, 'width_m': 70.0,
     'penalty_area_length_m': 20.15, 'penalty_area_width_m': 41.0,
@@ -32,6 +32,25 @@ PITCH = {
     'center_circle_radius_m': 9.15, 'penalty_spot_distance_m': 11.0,
     'goal_width_m': 7.32,
 }
+def _pitch_geometry(config: dict) -> dict:
+    geometry = config.get('pitch_geometry_m')
+    if geometry is None:
+        return dict(PITCH)
+    if not isinstance(geometry, dict) or set(geometry) != set(PITCH):
+        raise ValueError('Tracking pitch geometry is incomplete')
+    if any(isinstance(value, bool) or not isinstance(value, (int, float))
+           or not math.isfinite(value) or value <= 0 for value in geometry.values()):
+        raise ValueError('Tracking pitch geometry must contain positive finite metres')
+    length, width = geometry['length_m'], geometry['width_m']
+    if not (geometry['goal_area_length_m'] < geometry['penalty_area_length_m'] < length / 2
+            and geometry['goal_width_m'] < geometry['goal_area_width_m']
+            < geometry['penalty_area_width_m'] < width
+            and geometry['center_circle_radius_m'] < min(length, width) / 2
+            and geometry['penalty_spot_distance_m'] < geometry['penalty_area_length_m']):
+        raise ValueError('Tracking pitch geometry has inconsistent areas')
+    return dict(geometry)
+
+
 MAX_LINE_BYTES = 1024 * 1024
 MAX_PAGE_FRAMES = 240
 
@@ -225,7 +244,7 @@ class TrackingRepository:
                 'source': {'url': '/media/input/' + artifact['case_id'] + '.mp4',
                            'width': width, 'height': height, 'fps': fps,
                            'duration_seconds': duration, 'decoded_frames': expected},
-                'pitch': dict(PITCH), 'frame_count': expected,
+                'pitch': _pitch_geometry(config), 'frame_count': expected,
                 'frames_url': '/api/tracking/results/' + artifact['id'] + '/frames',
                 'metrics': {
                     'actual_fps': report.get('fps_including_render_and_json'),
@@ -237,7 +256,9 @@ class TrackingRepository:
                     'unknown_team_rate': report.get('unknown_team_rate_all_persons'),
                 },
                 'provenance': {'device': 'cuda', 'recorded_at': completed_at,
-                               'live': False, 'source_sha256': cached_hash[1]},
+                               'live': False, 'source_sha256': cached_hash[1],
+                               'pitch_profile_id': config.get('pitch_profile_id', 'legacy'),
+                               'paint_enabled': config.get('paint_enabled', False)},
             }
             json.dumps(descriptor, allow_nan=False)
             if tuple(_fingerprint(path) for path in paths) != fingerprints:
