@@ -69,3 +69,14 @@ test('candidate timeline uses actual media PTS and omits non-candidate decisions
   assert.equal(events[0].media_pts_seconds, 2.434);
   assert.equal(events[0].event.foul_details?.action, 'Holding');
 });
+
+test('structured revision conflicts retain the server revision for safe review recovery', async () => {
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        detail: { code: 'REVIEW_REVISION_CONFLICT', expected_revision: 1, current_revision: 2 },
+      }),
+      { status: 409 },
+    );
+  await assert.rejects(request('/review'), /服务器已是修订 2.*草稿已保留/);
+});

@@ -1,47 +1,38 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import type { Catalog } from '../types';
-import type {
-  FoulFacts,
-  ReviewRecord,
-  MultiviewDecision,
-  MultiviewCase,
-  ExplanationResponse,
-} from '../types/multiview';
+import type { MultiviewCase, ReviewState } from '../types/multiview';
 import { api, mediaUrl, request } from '../api';
 import { useAction, useResource } from '../hooks';
-import MediaPlayer from '../components/MediaPlayer';
 import { Alert, Empty, Footer, Modes, PageHeader, Icon } from '../components/UI';
-function emptyFacts(): FoulFacts {
-  const fact = { value: null, source: 'human' as const, confidence: null, confirmed: false };
-  return {
-    offence_confirmed: { ...fact },
-    action: { ...fact },
-    offender_team: { ...fact },
-    victim_team: { ...fact },
-    ball_in_play: { ...fact },
-    contact: { ...fact },
-    contact_region: { ...fact },
-    intensity: { ...fact },
-    attempt_to_play_ball: { ...fact },
-    tactical_impact: { ...fact },
-    home_defends_side: { ...fact },
-    location: null,
-  };
+import SynchronizedEvidencePlayer from '../components/multiview/SynchronizedEvidencePlayer';
+import type { EvidenceReadiness } from '../components/multiview/SynchronizedEvidencePlayer';
+import { decisionFocusTime } from '../components/multiview/evidencePlayback';
+import FoulLocationPitch from '../components/multiview/FoulLocationPitch';
+import FactsEditor from '../components/multiview/FactsEditor';
+import ReviewAssessment from '../components/multiview/ReviewAssessment';
+import { useMultiviewReview } from './useMultiviewReview';
+import './multiview.css';
+
+const stateLabels: Record<ReviewState, string> = {
+  pending: '待复核',
+  reviewed: '已复核',
+  uncertain: '待确认',
+  archived: '已归档',
+};
+const filters = ['all', 'pending', 'reviewed', 'uncertain', 'archived'] as const;
+type Filter = (typeof filters)[number];
+const noMedia: EvidenceReadiness = {
+  allVideosReady: false,
+  playableVideoCount: 0,
+  totalViewCount: 0,
+  loadingCameraIds: [],
+  missingCameraIds: [],
+  failedCameraIds: [],
+};
+function linkedCase() {
+  return new URLSearchParams(window.location.search).get('case') || '';
 }
-const restartLabels: Record<string, string> = {
-  play_on: '继续比赛',
-  direct_free_kick: '直接任意球',
-  indirect_free_kick: '间接任意球',
-  penalty: '罚球点球',
-  unknown: '待判定',
-  previous_restart: '恢复原重启',
-};
-const sanctionLabels: Record<string, string> = {
-  none: '无牌',
-  yellow_card: '黄牌',
-  red_card: '红牌',
-  pending: '待判定',
-};
+
 export function LiveInputs({ onCapture }: { onCapture?: (id: string) => void }) {
   const live = useResource(api.live, 4000),
     action = useAction();
@@ -120,125 +111,102 @@ export default function Multiview({
   catalog: Catalog | null;
   reload: () => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'video' | 'live'>('video'),
-    [selection, setSelection] = useState(''),
-    [cases, setCases] = useState<MultiviewCase[]>([]),
-    [angle, setAngle] = useState(0),
-    [seek, setSeek] = useState(0),
-    playhead = useRef(0),
-    [decision, setDecision] = useState<MultiviewDecision | null>(null),
-    [review, setReview] = useState<ReviewRecord | null>(null),
-    [facts, setFacts] = useState<FoulFacts>(emptyFacts),
-    [explanation, setExplanation] = useState<ExplanationResponse | null>(null),
-    [notice, setNotice] = useState<string | null>(null);
-  const action = useAction();
+  const [mode, setMode] = useState<'video' | 'live'>('video');
+  const [selection, setSelection] = useState(linkedCase);
+  const [cases, setCases] = useState<MultiviewCase[]>([]);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [panel, setPanel] = useState<'facts' | 'rules'>('facts');
+  const [readiness, setReadiness] = useState(noMedia);
+  const [focusRequest, setFocusRequest] = useState<{
+    token: string | number;
+    commonTimeS: number;
+  }>();
+  const status = useResource(api.multiviewStatus, 15000);
+  const workflow = useMultiviewReview(selection);
+  const current = cases.find((c) => c.case_id === selection);
   useEffect(() => {
-    if (catalog) {
-      setCases(catalog.cases);
-      setSelection((current) => current || catalog.cases[0]?.case_id || '');
-    }
-  }, [catalog]);
-  const current = cases.find((c) => c.case_id === selection),
-    view = current?.videos[angle];
-  const reviewLoader = useCallback(
-    () => (selection ? api.review(selection) : Promise.resolve({ review: null, analysis: null })),
-    [selection],
-  );
-  const saved = useResource(reviewLoader);
+    if (!catalog) return;
+    setCases((previous) =>
+      catalog.cases.map((item) => ({
+        ...item,
+        review_state:
+          workflow.states[item.case_id]?.state ??
+          previous.find((c) => c.case_id === item.case_id)?.review_state ??
+          item.review_state,
+        review_revision: workflow.states[item.case_id]?.revision ?? item.review_revision,
+      })),
+    );
+    setSelection((value) => value || catalog.cases[0]?.case_id || '');
+  }, [catalog, workflow.states]);
   useEffect(() => {
-    setAngle(0);
-    playhead.current = 0;
-    setSeek(0);
-    setDecision(null);
-    setReview(null);
-    setFacts(emptyFacts());
-    setExplanation(null);
-    setNotice(null);
+    const restore = () => {
+      const id = linkedCase();
+      if (id) setSelection(id);
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, []);
+  useEffect(() => {
+    if (!selection) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('case', selection);
+    window.history.replaceState(null, '', url);
+    setReadiness(noMedia);
+    setFocusRequest(undefined);
   }, [selection]);
-  useEffect(() => {
-    if (saved.data) {
-      setReview(saved.data.review);
-      setDecision(saved.data.analysis);
-      setFacts(saved.data.review?.facts || emptyFacts());
-    }
-  }, [saved.data]);
+  function choose(id: string) {
+    setSelection(id);
+  }
   async function analyze() {
-    if (!current) return;
-    setNotice(null);
-    const result = await action.run(() => api.analyze(current.case_id));
-    if (result) {
-      if (result.status === 'ok' && result.decision) {
-        setDecision(result.decision);
-        setNotice('模型分析已完成，人工复核仍由你确认');
-      } else action.setError(result.message || '分析未产生结果');
+    const result = await workflow.analyze();
+    if (result && current) {
+      const commonTimeS = decisionFocusTime(current, result);
+      if (commonTimeS !== null) setFocusRequest({ token: result.analysis_id, commonTimeS });
     }
   }
   async function capture(id: string) {
-    const next = await action.run(() =>
-      request<{ cases: MultiviewCase[] }>('/api/multiview/cases'),
-    );
-    if (next) {
-      setCases(next.cases);
+    try {
+      const result = await request<{ cases: MultiviewCase[] }>('/api/multiview/cases');
+      setCases(result.cases);
       setSelection(id);
       setMode('video');
       await reload();
+    } catch (error) {
+      workflow.showError(error);
     }
   }
-  function setFact(name: keyof FoulFacts, value: string) {
-    const parsed =
-      value === '' ? null : ['true', 'false'].includes(value) ? value === 'true' : value;
-    setFacts((f) => ({
-      ...f,
-      [name]: { value: parsed, source: 'human', confidence: null, confirmed: parsed !== null },
-    }));
-  }
-  function factSelect(label: string, name: keyof FoulFacts, options: [string, string][]) {
-    const value = facts[name];
-    return (
-      <label className="field">
-        <span>{label}</span>
-        <select
-          value={value && 'value' in value && value.value !== null ? String(value.value) : ''}
-          onChange={(e) => setFact(name, e.target.value)}
-        >
-          <option value="">未确认</option>
-          {options.map(([v, l]) => (
-            <option key={v} value={v}>
-              {l}
-            </option>
-          ))}
-        </select>
-      </label>
-    );
-  }
-  async function save() {
-    if (!current) return;
-    setNotice(null);
-    const result = await action.run(() =>
-      api.saveReview(current.case_id, {
-        expected_revision: review?.revision || 0,
-        analysis_id: decision?.analysis_id || null,
-        facts,
-        review_state: 'reviewed',
-      }),
-    );
-    if (result) {
-      setReview(result.review);
-      setNotice(`复核已保存 · 修订 ${result.review.revision}`);
-    }
-  }
-  async function explain() {
-    if (!review) return;
-    const result = await action.run(() => api.explain(review.case_id, review.revision));
-    if (result) setExplanation(result);
-  }
+  const decision = workflow.decision;
+  const pendingCount = cases.filter((c) =>
+    ['pending', 'uncertain'].includes(c.review_state),
+  ).length;
+  const visible = cases.filter((c) => filter === 'all' || c.review_state === filter);
+  const modelReady =
+    status.data?.ready && status.data.cuda_available && status.data.mode === 'model';
+  const mediaReason = !current
+    ? '选择案例后开始分析'
+    : readiness.failedCameraIds.length
+      ? '部分机位无法解码，请检查视频'
+      : readiness.missingCameraIds.length
+        ? '案例缺少可分析的视频'
+        : !readiness.allVideosReady
+          ? '等待所有机位的视频加载'
+          : '';
+  const modelReason = status.error
+    ? '无法读取模型状态'
+    : status.loading
+      ? '正在检查模型资源'
+      : !modelReady
+        ? `CUDA 模型尚未就绪${status.data?.missing.length ? '：' + status.data.missing.join('、') : ''}`
+        : '';
+  const blockedReason = modelReason || mediaReason;
+  const editable = Boolean(current) && !workflow.loading && !workflow.saving;
   return (
     <>
-      <div className="workspace">
-        <main className="main-column">
+      <div className="mv-workbench">
+        <main className="mv-evidence-column">
           <PageHeader
             title="多视角判罚"
-            description="让每一个角度成为判罚依据"
+            description="同步查看证据，逐项确认判罚事实"
             leading={
               <Modes
                 label="输入模式"
@@ -253,268 +221,295 @@ export default function Multiview({
           >
             <button
               className="button primary"
-              disabled={!current || action.busy || mode === 'live'}
+              disabled={
+                mode === 'live' ||
+                !current ||
+                workflow.analyzing ||
+                workflow.saving ||
+                workflow.loading ||
+                !modelReady ||
+                !readiness.allVideosReady
+              }
               onClick={() => void analyze()}
+              title={blockedReason || undefined}
             >
-              <Icon name="play" /> {action.busy ? '处理中…' : '开始分析'}
+              <Icon name="play" /> {workflow.analyzing ? '正在分析…' : '开始分析'}
             </button>
           </PageHeader>
-          <Alert message={action.error || saved.error} />
+          <Alert
+            message={workflow.error || status.error}
+            onRetry={() => {
+              void status.refresh();
+              void workflow.refresh();
+            }}
+          />
           {mode === 'live' ? (
             <LiveInputs onCapture={(id) => void capture(id)} />
           ) : (
             <>
-              <MediaPlayer
-                src={view?.media_url}
-                label={
-                  view ? `${String(angle + 1).padStart(2, '0')} ${view.display_name}` : undefined
-                }
-                onTime={(t) => {
-                  playhead.current = t;
-                }}
-                seekTo={seek}
-              />
-              <div className="view-rail">
-                {current?.videos.map((v, i) => (
-                  <button
-                    key={v.camera_id}
-                    className={`view-choice ${i === angle ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSeek(
-                        Math.max(
-                          0,
-                          playhead.current -
-                            (view?.sync_offset_ms || 0) / 1000 +
-                            (v.sync_offset_ms || 0) / 1000,
-                        ),
-                      );
-                      setAngle(i);
-                    }}
-                  >
-                    {v.media_url && v.media_kind === 'video' ? (
-                      <video src={mediaUrl(v.media_url)} preload="metadata" muted playsInline />
-                    ) : v.media_url ? (
-                      <img src={mediaUrl(v.media_url)} alt="" />
-                    ) : (
-                      <span className="view-placeholder" />
-                    )}
-                    <span>
-                      {String(i + 1).padStart(2, '0')} {v.display_name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <section className="case-section">
-                <div className="section-line">
-                  <h2>准备案例</h2>
-                  <span>{cases.length} 个案例 · 同步视角</span>
-                </div>
-                <div className="case-rail">
-                  {cases.map((item, i) => (
-                    <button
-                      key={item.case_id}
-                      className={`case-choice ${selection === item.case_id ? 'selected' : ''}`}
-                      onClick={() => setSelection(item.case_id)}
+              <section className="mv-case-queue" aria-label="案例队列">
+                <div className="mv-queue-heading">
+                  <span>
+                    {cases.length} 个案例 · {pendingCount} 个待处理
+                  </span>
+                  <label>
+                    复核状态
+                    <select
+                      aria-label="筛选复核状态"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value as Filter)}
                     >
-                      <span className="case-number">{String(i + 1).padStart(2, '0')}</span>
-                      <span>
-                        <strong>{item.title}</strong>
-                        <small>{item.match_name}</small>
-                        <small>
-                          {item.match_clock} · {item.videos.length} 视角
-                        </small>
-                      </span>
-                    </button>
-                  ))}
+                      {filters.map((value) => (
+                        <option key={value} value={value}>
+                          {value === 'all' ? '全部' : stateLabels[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                {!cases.length && <Empty compact>准备案例加载后可开始分析</Empty>}
+                <div className="mv-case-list">
+                  {visible.map((item) => {
+                    const number = cases.findIndex((c) => c.case_id === item.case_id) + 1;
+                    return (
+                      <button
+                        key={item.case_id}
+                        className={`mv-case-option ${item.case_id === selection ? 'selected' : ''}`}
+                        aria-pressed={item.case_id === selection}
+                        onClick={() => choose(item.case_id)}
+                      >
+                        <strong>案例 {number}</strong>
+                        <span>
+                          <i className={`mv-state-dot ${item.review_state}`} />
+                          {stateLabels[item.review_state]}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!visible.length && (
+                  <Empty compact>{cases.length ? '没有符合筛选条件的案例' : '正在加载案例'}</Empty>
+                )}
               </section>
+              {current ? (
+                <SynchronizedEvidencePlayer
+                  key={current.case_id}
+                  caseData={current}
+                  decision={decision}
+                  onReadinessChange={setReadiness}
+                  focusRequest={focusRequest}
+                />
+              ) : (
+                <Empty>未找到该案例，请从队列重新选择</Empty>
+              )}
+              {workflow.notice && (
+                <p className="notice mv-notice" role="status">
+                  {workflow.notice}
+                </p>
+              )}
+              {blockedReason && (
+                <p className="quiet mv-readiness" role="status">
+                  {blockedReason}
+                </p>
+              )}
+              <div className="mv-evidence-note">
+                <span>同步播放 · ±0.04 秒精细定位</span>
+                <span>模型建议需人工确认</span>
+              </div>
             </>
           )}
-          {notice && mode === 'video' && (
-            <p className="notice" role="status">
-              {notice}
-            </p>
-          )}
         </main>
-        <aside className="inspector">
-          <section>
-            <h2>模型分析</h2>
+        <aside className="mv-inspector" aria-label="判罚复核">
+          <section className="mv-model-panel">
+            <div className="section-line">
+              <h2>模型建议</h2>
+              {decision && (
+                <span className={`mv-source-label ${decision.mode}`}>
+                  {decision.mode === 'model' ? 'CUDA 模型' : '脚本结果'}
+                </span>
+              )}
+            </div>
             {mode === 'live' ? (
-              <Empty>捕获回放后分析</Empty>
+              <Empty compact>捕获回放后分析</Empty>
             ) : decision ? (
-              <div className="analysis-result">
-                <div className="result-source">
-                  {decision.mode === 'model' ? '真实模型推理' : '脚本回退结果'}
-                </div>
-                <h3>{decision.decision_zh || decision.decision}</h3>
-                <p>
-                  {decision.action} · {decision.severity}
-                </p>
-                <div className="result-line">
-                  <span>置信度</span>
-                  <strong>{Math.round(decision.confidence * 100)}%</strong>
-                </div>
-                {decision.inference_ms !== null && (
-                  <div className="result-line">
-                    <span>推理耗时</span>
-                    <span>{Math.round(decision.inference_ms)} ms</span>
-                  </div>
-                )}
-                <p className="quiet">模型候选结果，需人工复核</p>
-              </div>
-            ) : (
-              <Empty>尚未分析</Empty>
-            )}
-          </section>
-          <section className="human-review">
-            <h2>人工判罚</h2>
-            {mode === 'live' ? (
-              <Empty compact>捕获回放后进行人工复核</Empty>
-            ) : (
               <>
-                {[facts.offence_confirmed, facts.action, facts.intensity].some(
-                  (f) => f.source === 'model' && f.value !== null,
-                ) && <p className="review-prefill">部分事实来自模型预填，请逐项确认。</p>}
-                {factSelect('事件确认', 'offence_confirmed', [
-                  ['true', '确认犯规'],
-                  ['false', '不犯规'],
-                ])}
-                {facts.offence_confirmed.value === true && (
-                  <>
-                    {factSelect('动作类型', 'action', [
-                      ['Tackle', '铲球'],
-                      ['Standing Tackle', '站立抢断'],
-                      ['High Leg', '抬脚过高'],
-                      ['Holding', '拉扯'],
-                      ['Pushing', '推搡'],
-                      ['Elbowing', '肘击'],
-                      ['Challenge', '身体争抢'],
-                      ['Dive', '假摔'],
-                    ])}
-                    {factSelect('动作强度', 'intensity', [
-                      ['careless', '草率'],
-                      ['reckless', '鲁莽'],
-                      ['excessive_force', '使用过分力量'],
-                    ])}
-                    <details className="review-details">
-                      <summary>补充判罚事实</summary>
-                      {factSelect('犯规方', 'offender_team', [
-                        ['home', '主队'],
-                        ['away', '客队'],
-                      ])}
-                      {factSelect('受害方', 'victim_team', [
-                        ['home', '主队'],
-                        ['away', '客队'],
-                      ])}
-                      {factSelect('球在比赛中', 'ball_in_play', [
-                        ['true', '是'],
-                        ['false', '否'],
-                      ])}
-                      {factSelect('发生接触', 'contact', [
-                        ['true', '是'],
-                        ['false', '否'],
-                      ])}
-                      {factSelect('接触部位', 'contact_region', [
-                        ['leg', '腿部'],
-                        ['body', '身体'],
-                        ['head', '头部'],
-                      ])}
-                      {factSelect('尝试争抢球', 'attempt_to_play_ball', [
-                        ['true', '是'],
-                        ['false', '否'],
-                      ])}
-                      {factSelect('战术影响', 'tactical_impact', [
-                        ['none', '无'],
-                        ['spa', '破坏有希望进攻'],
-                        ['dogso', '破坏明显进球机会'],
-                      ])}
-                      {factSelect('主队防守方向', 'home_defends_side', [
-                        ['left', '左'],
-                        ['right', '右'],
-                      ])}
-                      <div className="field">
-                        <span>犯规位置 (m)</span>
-                        <div className="coordinate-inputs">
-                          {['x_m', 'y_m'].map((axis) => (
-                            <input
-                              key={axis}
-                              aria-label={`犯规位置 ${axis}`}
-                              type="number"
-                              step="0.1"
-                              placeholder={axis === 'x_m' ? 'X' : 'Y'}
-                              value={facts.location?.[axis as 'x_m' | 'y_m'] ?? ''}
-                              onChange={(e) => {
-                                const n = Number(e.target.value);
-                                setFacts((f) => ({
-                                  ...f,
-                                  location:
-                                    e.target.value === ''
-                                      ? null
-                                      : {
-                                          x_m: f.location?.x_m ?? 0,
-                                          y_m: f.location?.y_m ?? 0,
-                                          [axis]: n,
-                                          source: 'human',
-                                          confirmed: true,
-                                        },
-                                }));
-                              }}
-                            />
-                          ))}
+                <div className="mv-model-result">
+                  <h3>{decision.decision_zh || decision.decision}</h3>
+                  <span className="mv-confidence">
+                    {Math.round(decision.confidence * 100)}%<small>置信度</small>
+                  </span>
+                </div>
+                <p className="quiet">
+                  {decision.action} · {decision.severity}
+                  {decision.inference_ms !== null
+                    ? ` · ${Math.round(decision.inference_ms)} ms`
+                    : ''}
+                </p>
+                {current && decision.view_attention.length > 0 && (
+                  <div className="mv-attention" aria-label="机位关注权重">
+                    {current.videos.map((view, index) => {
+                      const weight = decision.view_attention[index];
+                      return Number.isFinite(weight) ? (
+                        <div key={view.camera_id}>
+                          <span>机位 {index + 1}</span>
+                          <meter
+                            min="0"
+                            max="1"
+                            value={Math.max(0, Math.min(1, weight))}
+                            aria-label={`机位 ${index + 1}关注权重`}
+                          />
+                          <strong>{Math.round(weight * 100)}%</strong>
                         </div>
-                      </div>
-                    </details>
-                  </>
-                )}
-                <button
-                  className="button secondary full"
-                  disabled={!current || action.busy}
-                  onClick={() => void save()}
-                >
-                  保存复核
-                </button>
-                {review && (
-                  <div className="assessment">
-                    <div className="result-line">
-                      <span>重启方式</span>
-                      <strong>
-                        {restartLabels[review.assessment.restart] || review.assessment.restart}
-                      </strong>
-                    </div>
-                    <div className="result-line">
-                      <span>处罚</span>
-                      <strong>
-                        {sanctionLabels[review.assessment.sanction] || review.assessment.sanction}
-                      </strong>
-                    </div>
-                    {review.assessment.missing_facts.length > 0 && (
-                      <p className="quiet">判罚信息尚未完整，请补充事实</p>
-                    )}
-                    <button
-                      className="text-button"
-                      disabled={action.busy}
-                      onClick={() => void explain()}
-                    >
-                      生成规则解释 <Icon name="arrow" size={14} />
-                    </button>
-                    {explanation && (
-                      <p className="explanation">
-                        {explanation.summary}
-                        <small>
-                          来源：{explanation.source === 'local_llm' ? '本地语言模型' : '规则模板'}
-                        </small>
-                      </p>
-                    )}
+                      ) : null;
+                    })}
                   </div>
                 )}
               </>
+            ) : (
+              <Empty compact>
+                {workflow.loading ? '正在读取已有分析…' : '点击开始分析，生成模型建议'}
+              </Empty>
             )}
           </section>
+          {mode === 'video' && (
+            <>
+              <div className="mv-review-tabs" role="tablist" aria-label="复核面板">
+                {(['facts', 'rules'] as const).map((value) => (
+                  <button
+                    key={value}
+                    id={`mv-review-tab-${value}`}
+                    role="tab"
+                    aria-selected={panel === value}
+                    aria-controls={`mv-review-panel-${value}`}
+                    tabIndex={panel === value ? 0 : -1}
+                    className={panel === value ? 'selected' : ''}
+                    onClick={() => setPanel(value)}
+                    onKeyDown={(event) => {
+                      if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+                        event.preventDefault();
+                        const next =
+                          event.key === 'Home'
+                            ? 'facts'
+                            : event.key === 'End'
+                              ? 'rules'
+                              : panel === 'facts'
+                                ? 'rules'
+                                : 'facts';
+                        setPanel(next);
+                        document.getElementById(`mv-review-tab-${next}`)?.focus();
+                      }
+                    }}
+                  >
+                    {value === 'facts' ? '事实确认' : '规则依据'}
+                    {value === 'rules' && workflow.dirty && <i aria-label="待重新评估" />}
+                  </button>
+                ))}
+              </div>
+              <div
+                className="mv-review-content"
+                id={`mv-review-panel-${panel}`}
+                role="tabpanel"
+                aria-labelledby={`mv-review-tab-${panel}`}
+              >
+                {panel === 'facts' ? (
+                  <>
+                    <FoulLocationPitch
+                      key={selection}
+                      location={workflow.facts.location}
+                      geometry={
+                        workflow.dirty ? null : (workflow.review?.assessment.geometry ?? null)
+                      }
+                      offenderTeam={workflow.facts.offender_team}
+                      homeDefendsSide={workflow.facts.home_defends_side}
+                      dirty={workflow.dirty}
+                      saving={workflow.saving}
+                      disabled={!editable || workflow.analyzing}
+                      onChange={(location) => workflow.edit({ ...workflow.facts, location })}
+                    />
+                    <FactsEditor
+                      facts={workflow.facts}
+                      onChange={workflow.edit}
+                      newModelFields={workflow.newModelFields}
+                      prefillToken={workflow.prefillToken}
+                      disabled={!editable || workflow.analyzing}
+                    />
+                  </>
+                ) : (
+                  <ReviewAssessment
+                    assessment={workflow.review?.assessment ?? null}
+                    explanation={workflow.explanation}
+                    revision={workflow.review?.revision ?? null}
+                    dirty={workflow.dirty}
+                    explaining={workflow.explaining}
+                    onExplain={() => void workflow.explain()}
+                    explainDisabled={!workflow.review || workflow.dirty || workflow.saving}
+                  />
+                )}
+              </div>
+              <section className="mv-review-actions">
+                <button
+                  className="text-button mv-reload-review"
+                  disabled={workflow.loading || workflow.saving || workflow.analyzing}
+                  onClick={() => void workflow.refresh()}
+                >
+                  重新载入复核
+                </button>
+                <p className="mv-draft-status" role="status">
+                  {workflow.loading
+                    ? '正在读取复核…'
+                    : workflow.dirty
+                      ? '草稿已修改 · 保存后重新评估'
+                      : workflow.review
+                        ? `${stateLabels[workflow.review.review_state]} · 修订 ${workflow.review.revision}`
+                        : '尚未保存复核'}
+                </p>
+                <div className="mv-save-row">
+                  <button
+                    className="button secondary"
+                    disabled={!editable || workflow.analyzing}
+                    onClick={() => void workflow.save(workflow.review?.review_state ?? 'pending')}
+                  >
+                    {workflow.saving ? '正在保存…' : '保存草稿'}
+                  </button>
+                  <button
+                    className="button primary"
+                    disabled={!editable || workflow.analyzing}
+                    onClick={() => void workflow.save('reviewed')}
+                  >
+                    确认复核
+                  </button>
+                </div>
+                <div className="mv-secondary-row">
+                  <button
+                    className="text-button"
+                    disabled={!editable || workflow.analyzing}
+                    onClick={() => void workflow.save('uncertain')}
+                  >
+                    标记待确认
+                  </button>
+                  <button
+                    className="text-button"
+                    disabled={!editable || workflow.analyzing}
+                    onClick={() => void workflow.save('archived')}
+                  >
+                    归档
+                  </button>
+                  {workflow.dirty && (
+                    <button
+                      className="text-button"
+                      disabled={!editable || workflow.analyzing}
+                      onClick={workflow.discard}
+                    >
+                      还原草稿
+                    </button>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
         </aside>
       </div>
       <Footer>
-        {mode === 'live' ? '现场输入 · 设备状态来自后端' : '视频案例 · 后台分析与人工复核独立记录'}
+        {mode === 'live' ? '现场输入 · 设备状态来自后端' : '视频案例 · 模型建议与人工复核分别记录'}
       </Footer>
     </>
   );

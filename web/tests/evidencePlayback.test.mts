@@ -1,0 +1,137 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  commonTime,
+  containedMediaBounds,
+  decisionFocusTime,
+  expandedFocusRect,
+  localizationTier,
+  localizationWindow,
+  localTime,
+  mediaPosition,
+  playbackClockTime,
+  temporalFocusStrength,
+  timelineDuration,
+  timelinePercent,
+  viewRange,
+} from '../src/components/multiview/evidencePlayback.ts';
+import type {
+  EvidenceView,
+  LocalizationBox,
+  MultiviewCase,
+  MultiviewDecision,
+} from '../src/types/multiview.ts';
+
+const camera = (id: string, offset: number): EvidenceView => ({
+  camera_id: id,
+  display_name: id,
+  role: 'main',
+  sync_offset_ms: offset,
+  quality: 'test',
+  media_url: '/test.mp4',
+  media_kind: 'video',
+});
+const box: LocalizationBox = {
+  rect: [10, 20, 30, 40],
+  score: 0.8,
+  source: 'gradcam',
+  active_start_s: 2,
+  active_end_s: 3,
+  peak_s: 2.5,
+  temporal_source: 'gradcam',
+};
+
+test('offsets preserve one common time across positive and negative camera clocks', () => {
+  const first = camera('main', 400);
+  const second = camera('side', -600);
+  assert.equal(localTime(2, first), 2.4);
+  assert.equal(localTime(2, second), 1.4);
+  assert.equal(commonTime(localTime(2, first), first), 2);
+  assert.equal(commonTime(localTime(2, second), second), 2);
+});
+
+test('short and delayed cameras report their unavailable ranges without moving the shared clock', () => {
+  const delayed = camera('delayed', -1000);
+  assert.deepEqual(viewRange(delayed, 2), { startS: 1, endS: 3 });
+  assert.deepEqual(mediaPosition(0.5, delayed, 2), { timeS: 0, state: 'before' });
+  assert.deepEqual(mediaPosition(1.5, delayed, 2), { timeS: 0.5, state: 'active' });
+  assert.deepEqual(mediaPosition(4, delayed, 2), { timeS: 2, state: 'after' });
+  assert.deepEqual(mediaPosition(1, delayed, Number.NaN), { timeS: 0, state: 'unavailable' });
+  assert.equal(viewRange(delayed, 0), null);
+});
+
+test('shared timeline covers longer camera tails and clamps marks to real bounds', () => {
+  assert.equal(timelineDuration([camera('a', 0), camera('b', -1000)], { a: 3, b: 5 }), 6);
+  assert.equal(timelinePercent(-1, 6), 0);
+  assert.equal(timelinePercent(8, 6), 100);
+  assert.equal(timelinePercent(2, 0), 0);
+});
+
+test('missing temporal inference is labelled event prior rather than model attention', () => {
+  const prior = localizationWindow({ rect: [0, 0, 10, 10], score: 0.5, source: 'gradcam' }, 4);
+  assert.deepEqual(prior, { startS: 3.5, endS: 4.5, peakS: 4, source: 'event_prior' });
+  assert.equal(localizationWindow({ ...box, peak_s: 10 }, 4).peakS, 3);
+  assert.equal(
+    localizationWindow({ ...box, temporal_source: 'event_prior' }, 4).source,
+    'event_prior',
+  );
+  assert.equal(localizationWindow({ ...box, active_start_s: Number.NaN }, 4).source, 'event_prior');
+});
+
+test('attention fades outside its window and uses only genuine temporal score bins', () => {
+  const window = localizationWindow(box, 2.5);
+  assert.equal(temporalFocusStrength(box, 0, window), 0);
+  assert.equal(temporalFocusStrength(box, 5, window), 0);
+  assert.equal(
+    temporalFocusStrength(
+      { ...box, temporal_bins: [{ start_s: 2, end_s: 3, score: 1 }] },
+      2.5,
+      window,
+    ),
+    1,
+  );
+  assert.equal(
+    temporalFocusStrength(
+      { ...box, temporal_bins: [{ start_s: 2, end_s: 3, score: 0 }] },
+      2.5,
+      window,
+    ),
+    0.65,
+  );
+  assert.equal(localizationTier({ ...box, reliable: false }), 'hidden');
+  assert.equal(localizationTier({ ...box, display_tier: 'caution' }), 'caution');
+});
+
+test('overlay coordinates account for letterboxing and reject invalid geometry', () => {
+  assert.deepEqual(containedMediaBounds(400, 400, 1600, 900), {
+    left: 0,
+    top: 87.5,
+    width: 400,
+    height: 225,
+  });
+  assert.equal(containedMediaBounds(400, 0, 1600, 900), null);
+  assert.equal(containedMediaBounds(400, 400, Number.NaN, 900), null);
+  assert.deepEqual(expandedFocusRect([0, 0, 100, 100]), [0, 0, 100, 100]);
+  assert.equal(expandedFocusRect([10, 10, -1, 20]), null);
+});
+
+test('analysis focus restores a model peak to shared time and distinguishes event fallback', () => {
+  const caseData = { videos: [camera('main', 500)], event_time_s: 2 } as MultiviewCase;
+  const decision = { localization: { main: box } } as MultiviewDecision;
+  assert.equal(decisionFocusTime(caseData, decision), 2);
+  assert.equal(decisionFocusTime(caseData, { localization: {} } as MultiviewDecision), 2);
+  assert.equal(
+    decisionFocusTime(caseData, {
+      localization: { main: { ...box, active_start_s: null, active_end_s: null } },
+    } as MultiviewDecision),
+    2,
+  );
+});
+
+test('reference stalls fall back to the independent clock without reversing the common playhead', () => {
+  assert.equal(playbackClockTime(2.1, 2, 6, 2, 200), 2.1);
+  assert.equal(playbackClockTime(2.1, 2, 6, 2.08, 20), 2.08);
+  assert.equal(playbackClockTime(2.1, 2.09, 6, 2.08, 20), 2.09);
+  assert.equal(playbackClockTime(4, 3.9, 6, 0.2, 20), 4);
+  assert.equal(playbackClockTime(7, 5.9, 6, null, Infinity), 6);
+});

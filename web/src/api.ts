@@ -6,6 +6,7 @@ import type {
   FoulFacts,
   ReviewState,
   ExplanationResponse,
+  MultiviewStatus,
 } from './types/multiview';
 export async function request<T>(
   path: string,
@@ -20,14 +21,19 @@ export async function request<T>(
       signal: options?.signal || controller.signal,
     });
     const payload = await response.json().catch(() => null);
-    if (!response.ok)
+    if (!response.ok) {
+      const detail = payload?.detail;
+      const conflict = typeof detail === 'object' && detail?.code === 'REVIEW_REVISION_CONFLICT';
       throw new Error(
-        typeof payload?.detail === 'string'
-          ? payload.detail
-          : typeof payload?.error === 'string'
-            ? payload.error
-            : `服务暂不可用 (${response.status})`,
+        conflict
+          ? `复核修订冲突：服务器已是修订 ${detail.current_revision}。草稿已保留，请读取最新复核后再保存。`
+          : typeof detail === 'string'
+            ? detail
+            : typeof payload?.error === 'string'
+              ? payload.error
+              : `服务暂不可用 (${response.status})`,
       );
+    }
     if (payload === null) throw new Error('服务返回了空响应');
     return payload as T;
   } catch (error) {
@@ -50,6 +56,7 @@ export const post = <T>(path: string, body?: unknown, timeoutMs?: number) =>
   );
 export const api = {
   catalog: () => request<Catalog>('/api/catalog'),
+  multiviewStatus: () => request<MultiviewStatus>('/api/multiview/status'),
   live: () => request<LiveMultiviewStatus>('/api/multiview/live/status'),
   liveControl: (action: 'start' | 'stop') =>
     post<LiveMultiviewStatus>(`/api/multiview/live/${action}`),

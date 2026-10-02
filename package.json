@@ -9,7 +9,7 @@
     "build": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",
     "lint": "tsc -p web/tsconfig.json --noEmit",
     "preview": "vite preview --config web/vite.config.ts",
-    "test": "node --experimental-strip-types --test web/tests/api.test.mts",
+    "test": "node --experimental-strip-types --test web/tests/*.test.mts",
     "format:check": "prettier --check web/src web/vite.config.ts"
   },
   "dependencies": {
