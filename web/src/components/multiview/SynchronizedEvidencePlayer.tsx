@@ -589,14 +589,16 @@ export default function SynchronizedEvidencePlayer({
         <span>
           同步证据 <small>{caseData.videos.length} 个机位</small>
         </span>
-        <label className="se-attention-toggle">
-          <input
-            type="checkbox"
-            checked={showAttention}
-            onChange={(event) => setShowAttention(event.target.checked)}
-          />
-          显示关注区域
-        </label>
+        {decision && (
+          <label className="se-attention-toggle">
+            <input
+              type="checkbox"
+              checked={showAttention}
+              onChange={(event) => setShowAttention(event.target.checked)}
+            />
+            显示关注区域
+          </label>
+        )}
       </div>
       <div className={`se-mosaic se-count-${caseData.videos.length}`}>
         {caseData.videos.map((view, index) => (
@@ -798,15 +800,18 @@ export default function SynchronizedEvidencePlayer({
           <i className="se-legend-range" />
           可播放片段
         </span>
-        <span>
-          <i className="se-legend-focus" />
-          模型关注窗口
-        </span>
-        <span>
-          <i className="se-legend-prior" />
-          事件先验
-        </span>
-        <span>所有机位使用共同时间 · 步进 0.04 秒</span>
+        {decision && (
+          <>
+            <span>
+              <i className="se-legend-focus" />
+              模型关注窗口
+            </span>
+            <span>
+              <i className="se-legend-prior" />
+              事件先验
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

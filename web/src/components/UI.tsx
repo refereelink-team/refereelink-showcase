@@ -97,7 +97,7 @@ export function PageHeader({
   leading,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children?: ReactNode;
   leading?: ReactNode;
 }) {
@@ -107,7 +107,7 @@ export function PageHeader({
         {leading}
         <div>
           <h1>{title}</h1>
-          <p>{description}</p>
+          {description && <p>{description}</p>}
         </div>
       </div>
       <div className="heading-actions">{children}</div>
@@ -118,9 +118,7 @@ export function Footer({ children }: { children: ReactNode }) {
   return (
     <footer className="workspace-footer">
       <span>{children}</span>
-      <span className="footer-brand">
-        RefereeLink <i /> 足球研究工作台
-      </span>
+      <span className="footer-brand">RefereeLink</span>
     </footer>
   );
 }

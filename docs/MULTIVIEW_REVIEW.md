@@ -8,7 +8,7 @@ The showcase presents the upstream multi-view review workflow in a compact evide
 2. Select **Case 1**, **Case 2**, and so on. The Chinese UI displays `案例 1`, `案例 2`, etc. The labels use the unfiltered catalog order; filtering does not renumber cases. Match titles, league names, and clocks are intentionally omitted from the case queue.
 3. Review all cameras together. Three views use one large view plus two smaller views; four views use a two-by-two grid. Selecting a primary view changes its prominence and audio selection without creating a new playback clock.
 4. Use shared play/pause, seek, speed, and ±0.04-second controls. These are fixed time increments, not an assertion of one decoded video frame. Per-view timeline rows also control the shared time.
-5. Start analysis when actual CUDA resources and all evidence videos are ready. The model result remains a suggestion. A new result seeks the cameras to a model attention peak, or to the labeled event-time fallback when no peak exists.
+5. Start analysis when actual CUDA resources and all evidence videos are ready. Timeline attention windows, peaks, and video focus regions appear only after a successful analysis in the current case visit; historical results do not display playback focus before analysis. Switching cases or reopening the page hides this focus. The model result remains a suggestion. A new result seeks the cameras to a model attention peak, or to the labeled event-time fallback when no peak exists.
 6. Confirm model-suggested facts individually, or edit them. Accepting a suggestion retains model provenance and records human confirmation. Editing records human provenance. Team, match context, and foul location are not fabricated from action logits.
 7. Click, drag, use arrow keys, or enter X/Y meter coordinates to mark the foul location. Clear and undo are available. Saved geometry identifies the zone and whether the location is in the offender's own penalty area.
 8. Save the draft, confirm the review, mark it uncertain, or archive it. Saving a draft preserves the existing review state; a new draft starts as pending. Review state and rule completeness are independent.
@@ -43,7 +43,7 @@ The synchronization, geometry rendering, fact vocabulary, and rule-display behav
 | Dirty assessment and explanation invalidation | Review request scope and inspector |
 | Full rule status, missing facts, conflicts, Law trace and excerpts | `ReviewAssessment` |
 | Template, optional LLM, automatic explanation and revision protection | Review workflow and assessment panel |
-| Anonymous case queue, state filter and pending count | Multi-view page |
+| Anonymous case queue and state filter | Multi-view page |
 | Case deep links and restoration | Search-parameter selection and draft cache |
 | Real model/media readiness and stale-response protection | Status resource, evidence readiness and request scope |
 

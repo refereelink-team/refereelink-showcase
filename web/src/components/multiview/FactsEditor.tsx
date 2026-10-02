@@ -188,7 +188,6 @@ export default function FactsEditor({
         </summary>
         <div>{fields.slice(5).map(renderField)}</div>
       </details>
-      <p className="rv-field-note">AI 建议需要逐项确认；直接修改字段将记录为人工填写。</p>
     </div>
   );
 }

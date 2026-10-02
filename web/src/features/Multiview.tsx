@@ -121,6 +121,10 @@ export default function Multiview({
     token: string | number;
     commonTimeS: number;
   }>();
+  const [attentionAnalysis, setAttentionAnalysis] = useState<{
+    caseId: string;
+    analysisId: string;
+  }>();
   const status = useResource(api.multiviewStatus, 15000);
   const workflow = useMultiviewReview(selection);
   const current = cases.find((c) => c.case_id === selection);
@@ -153,13 +157,17 @@ export default function Multiview({
     window.history.replaceState(null, '', url);
     setReadiness(noMedia);
     setFocusRequest(undefined);
+    setAttentionAnalysis(undefined);
   }, [selection]);
   function choose(id: string) {
     setSelection(id);
   }
   async function analyze() {
+    setAttentionAnalysis(undefined);
+    setFocusRequest(undefined);
     const result = await workflow.analyze();
     if (result && current) {
+      setAttentionAnalysis({ caseId: current.case_id, analysisId: result.analysis_id });
       const commonTimeS = decisionFocusTime(current, result);
       if (commonTimeS !== null) setFocusRequest({ token: result.analysis_id, commonTimeS });
     }
@@ -176,9 +184,12 @@ export default function Multiview({
     }
   }
   const decision = workflow.decision;
-  const pendingCount = cases.filter((c) =>
-    ['pending', 'uncertain'].includes(c.review_state),
-  ).length;
+  // Historical analyses remain available for review, but playback focus requires a new analysis.
+  const attentionDecision =
+    attentionAnalysis?.caseId === selection &&
+    attentionAnalysis.analysisId === decision?.analysis_id
+      ? decision
+      : null;
   const visible = cases.filter((c) => filter === 'all' || c.review_state === filter);
   const modelReady =
     status.data?.ready && status.data.cuda_available && status.data.mode === 'model';
@@ -206,7 +217,6 @@ export default function Multiview({
         <main className="mv-evidence-column">
           <PageHeader
             title="多视角判罚"
-            description="同步查看证据，逐项确认判罚事实"
             leading={
               <Modes
                 label="输入模式"
@@ -249,9 +259,6 @@ export default function Multiview({
             <>
               <section className="mv-case-queue" aria-label="案例队列">
                 <div className="mv-queue-heading">
-                  <span>
-                    {cases.length} 个案例 · {pendingCount} 个待处理
-                  </span>
                   <label>
                     复核状态
                     <select
@@ -294,7 +301,7 @@ export default function Multiview({
                 <SynchronizedEvidencePlayer
                   key={current.case_id}
                   caseData={current}
-                  decision={decision}
+                  decision={attentionDecision}
                   onReadinessChange={setReadiness}
                   focusRequest={focusRequest}
                 />
@@ -311,10 +318,6 @@ export default function Multiview({
                   {blockedReason}
                 </p>
               )}
-              <div className="mv-evidence-note">
-                <span>同步播放 · ±0.04 秒精细定位</span>
-                <span>模型建议需人工确认</span>
-              </div>
             </>
           )}
         </main>

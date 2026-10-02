@@ -22,7 +22,7 @@
 .mv-queue-heading {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
     margin-bottom: 10px;
     font-size: 12px;
@@ -240,16 +240,6 @@
 .mv-secondary-row .text-button {
     font-size: 11px;
 }
-.mv-evidence-note {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    color: var(--muted);
-    font-size: 11px;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-    margin-top: 18px;
-}
 .mv-notice {
     margin-top: 16px;
 }
@@ -339,10 +329,6 @@
     }
     .mv-queue-heading {
         font-size: 11px;
-    }
-    .mv-evidence-note {
-        flex-direction: column;
-        gap: 4px;
     }
 }
 
