@@ -1,0 +1,20 @@
+# Third-Party Notices
+
+## Roboflow source lineage
+
+This repository retains code lineage from the original Roboflow soccer-analysis
+project. The MIT License and the copyright notice in `LICENSE` remain in force
+for the covered code and must be retained in redistributed copies.
+
+## External datasets, models, and samples
+
+External SoccerNet/MVFoul data, downloaded video samples, model weights, and
+third-party model code are not bundled in this repository. Obtain and use them
+only under their own licenses and terms. The repository does not grant rights
+to redistribute those external materials.
+
+## Dependencies
+
+Python and frontend dependencies are resolved from `pyproject.toml`, `requirements-inference.txt`,
+`package.json`, and `package-lock.json`; they are not vendored here. Each
+dependency's own license and notice requirements continue to apply.

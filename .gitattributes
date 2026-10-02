@@ -1,0 +1,3 @@
+# Keep extracted upstream Python byte-for-byte for source-manifest verification.
+# These historical files include CRLF and terminal blank lines.
+backend_core/**/*.py -text whitespace=cr-at-eol,-blank-at-eof

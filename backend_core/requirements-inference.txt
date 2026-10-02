@@ -1,0 +1,15 @@
+# Install on the remote CUDA host. The torch wheel must support its GPU.
+# These direct versions match the actual 2026-10-02 CUDA validation environment.
+torch==2.13.0
+torchvision==0.28.0
+ultralytics==8.4.95
+supervision==0.29.1
+numpy==2.5.3
+opencv-python==5.0.0.93
+pydantic==2.13.4
+psutil>=5.9
+
+# Optional GPU-memory metrics only: nvidia-ml-py (imports as pynvml).
+# System binaries, installed separately: ffmpeg and ffprobe.
+# External assets, not Python packages: authorized YOLO/pitch weights,
+# MobileNet torch cache, match calibration bundle, and SoccerNet VARS code/weights.

@@ -1,0 +1,35 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
+.env.*
+!.env.example
+runtime/
+var/
+web/node_modules/
+web/dist/
+node_modules/
+dist/
+*.pt
+*.pth
+*.pth.tar
+*.npz
+*.mp4
+*.mov
+*.log
+
+# Private host-specific deployment configuration
+deploy/showcase.env
+
+# Separately obtained upstream model source; not redistributed here
+backend_core/third_party/
+*.onnx
+*.safetensors
+*.avi
+*.mkv
+*.MOV
+*.MP4
+.DS_Store

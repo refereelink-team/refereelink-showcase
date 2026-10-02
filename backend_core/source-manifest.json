@@ -1,0 +1,551 @@
+{
+  "schema": "refereelink-extracted-core-v1",
+  "upstream": {
+    "git_integration_head": "1cd187a7eac9459864a02179eccb295599de9b30",
+    "main": "57a567b5056b00554d60aaa07f6cdc7acad07a4b",
+    "pr72": {
+      "state": "OPEN",
+      "head": "e929072eabb8403cb52c386da8907993d14612fc",
+      "url": "https://github.com/refereelink-team/refereelink-backend/pull/72"
+    },
+    "pr82": {
+      "state": "OPEN",
+      "head": "e20c21fc7406dd14bf50a8aeaf992fa1f8054aeb",
+      "url": "https://github.com/refereelink-team/refereelink-backend/pull/82"
+    },
+    "code_patch_sha256": "2c786ded6ec3eb9c5dd3f0f47f077979f7de082b9e192ae7f521a60fd35c8d7b",
+    "patch_description": "Preserve manual labels and exclude weak training tracks; add enable_pitch ablation flag; retry non-finite FP16 VARS outputs with identical CUDA FP32 model, with explicit failure after non-finite retry.",
+    "runner_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245"
+  },
+  "extraction_entrypoints": [
+    "tools/run_night_ablation.py",
+    "tools/render_diagnostic_video.py"
+  ],
+  "initializer_changes": [
+    "app/field_ingest/__init__.py",
+    "app/services/__init__.py",
+    "tools/__init__.py"
+  ],
+  "python_files": {
+    "app/__init__.py": {
+      "source_sha256": "f818aff25ff44fb89ab44e54ad2ad8d336e0293dbb02f638c5c11fa713b32eb9",
+      "extracted_sha256": "f818aff25ff44fb89ab44e54ad2ad8d336e0293dbb02f638c5c11fa713b32eb9",
+      "modified_for_extraction": false
+    },
+    "app/annotators/__init__.py": {
+      "source_sha256": "3e8b9f27a3233fe4ac52be6ab98ce8fbbbd6959dd1342de2a4608ca4bf3cf8d3",
+      "extracted_sha256": "3e8b9f27a3233fe4ac52be6ab98ce8fbbbd6959dd1342de2a4608ca4bf3cf8d3",
+      "modified_for_extraction": false
+    },
+    "app/annotators/pitch.py": {
+      "source_sha256": "980cde8241702fad47e9ededdd8aaf6fb2d2bc44f489046c52d442dbc9a1df55",
+      "extracted_sha256": "980cde8241702fad47e9ededdd8aaf6fb2d2bc44f489046c52d442dbc9a1df55",
+      "modified_for_extraction": false
+    },
+    "app/classification/__init__.py": {
+      "source_sha256": "db5c04ca4175d53ab66d00d04aa27be3078994d06ebc568c0351feaff913fff9",
+      "extracted_sha256": "db5c04ca4175d53ab66d00d04aa27be3078994d06ebc568c0351feaff913fff9",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/__init__.py": {
+      "source_sha256": "f50b0a19fa0245bf56df5bf6acb8574d378e9427c84888a5fa7924ae2b56a268",
+      "extracted_sha256": "f50b0a19fa0245bf56df5bf6acb8574d378e9427c84888a5fa7924ae2b56a268",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/appearance_features.py": {
+      "source_sha256": "980eedd41e4c2668379d7b060735910f9f9fe691fe757da7da854c149962663e",
+      "extracted_sha256": "980eedd41e4c2668379d7b060735910f9f9fe691fe757da7da854c149962663e",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/bundle.py": {
+      "source_sha256": "fadd58bd228000b3d0bea830341da66adb28246d400a3313a6880b5633d3bbd6",
+      "extracted_sha256": "fadd58bd228000b3d0bea830341da66adb28246d400a3313a6880b5633d3bbd6",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/clip.py": {
+      "source_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
+      "extracted_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/color_features.py": {
+      "source_sha256": "563d23ad06b31189df3b417dc2e587f151f5b69d055afd683f10d591925228e6",
+      "extracted_sha256": "563d23ad06b31189df3b417dc2e587f151f5b69d055afd683f10d591925228e6",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/predictor.py": {
+      "source_sha256": "c3cdf888f7c666f0d9c606261e3381ede69bff8cef3fa2ef7979e3253748c18f",
+      "extracted_sha256": "c3cdf888f7c666f0d9c606261e3381ede69bff8cef3fa2ef7979e3253748c18f",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/prototypes.py": {
+      "source_sha256": "a4d1ec43326720d7a6189a8a3b40942130329165b7e105fb8ca6a64ebcf40560",
+      "extracted_sha256": "a4d1ec43326720d7a6189a8a3b40942130329165b7e105fb8ca6a64ebcf40560",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/quality.py": {
+      "source_sha256": "d988bc3310bcebc11921375ba74dc3e7900bad84365ea218209498bfb088699f",
+      "extracted_sha256": "d988bc3310bcebc11921375ba74dc3e7900bad84365ea218209498bfb088699f",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/roi.py": {
+      "source_sha256": "a02977c01844e5fa2959d87ab2988a36c34fbcd6d9163a9a06cc10bb8f32ffb2",
+      "extracted_sha256": "a02977c01844e5fa2959d87ab2988a36c34fbcd6d9163a9a06cc10bb8f32ffb2",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/role_predictor.py": {
+      "source_sha256": "2a9947fc58456d8084d581c3c1c54c6b3965c202c6719920e5767724163ef498",
+      "extracted_sha256": "2a9947fc58456d8084d581c3c1c54c6b3965c202c6719920e5767724163ef498",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/runtime.py": {
+      "source_sha256": "2fe4f5ea61806443757e8fc078b0a89dfef566ea3d435f3d94a5c2d1e3c19d40",
+      "extracted_sha256": "2fe4f5ea61806443757e8fc078b0a89dfef566ea3d435f3d94a5c2d1e3c19d40",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/session.py": {
+      "source_sha256": "e96fbe6ca0e8d8679a6b5b29ddc53491559181f51e1457437c5ceae735abdd69",
+      "extracted_sha256": "e96fbe6ca0e8d8679a6b5b29ddc53491559181f51e1457437c5ceae735abdd69",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/track_features.py": {
+      "source_sha256": "2c6032c573789b7099a9beda9bef7791a48f99bfae4f767a5e5914284e0e70f8",
+      "extracted_sha256": "2c6032c573789b7099a9beda9bef7791a48f99bfae4f767a5e5914284e0e70f8",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/types.py": {
+      "source_sha256": "ed889effa6e140e44d614e548b9fe8d31c8c5d5c92ff4362dbb1f1732899198d",
+      "extracted_sha256": "ed889effa6e140e44d614e548b9fe8d31c8c5d5c92ff4362dbb1f1732899198d",
+      "modified_for_extraction": false
+    },
+    "app/classification/team_calibration/validation.py": {
+      "source_sha256": "d3d0557157a93c71f7f324365f561c4012ef547d12aded1a939dd236bfad6f27",
+      "extracted_sha256": "d3d0557157a93c71f7f324365f561c4012ef547d12aded1a939dd236bfad6f27",
+      "modified_for_extraction": false
+    },
+    "app/config/__init__.py": {
+      "source_sha256": "e19696f8bb9305b5dffdbac92f94aba9dc970bf4cadf2abcd21b7fb4f0319bb5",
+      "extracted_sha256": "e19696f8bb9305b5dffdbac92f94aba9dc970bf4cadf2abcd21b7fb4f0319bb5",
+      "modified_for_extraction": false
+    },
+    "app/config/pitch.py": {
+      "source_sha256": "f8a6af7f6c697f923b02e8074a594518021f252f1fc00abd9ba49622a4666623",
+      "extracted_sha256": "f8a6af7f6c697f923b02e8074a594518021f252f1fc00abd9ba49622a4666623",
+      "modified_for_extraction": false
+    },
+    "app/constants/__init__.py": {
+      "source_sha256": "a98a5045b9bbe03e6e344b16a8f814116fa553754d6e2ff2815cf78aad3aad72",
+      "extracted_sha256": "a98a5045b9bbe03e6e344b16a8f814116fa553754d6e2ff2815cf78aad3aad72",
+      "modified_for_extraction": false
+    },
+    "app/constants/classes.py": {
+      "source_sha256": "49f88a7960740db708da091764a1b21bff78152ec4245d4748ed1722504d7d99",
+      "extracted_sha256": "49f88a7960740db708da091764a1b21bff78152ec4245d4748ed1722504d7d99",
+      "modified_for_extraction": false
+    },
+    "app/constants/paths.py": {
+      "source_sha256": "bf59129494bda691f34d74287a61b377b9a19c5bc6f21fd5fb1f0ee4f57c2d2a",
+      "extracted_sha256": "bf59129494bda691f34d74287a61b377b9a19c5bc6f21fd5fb1f0ee4f57c2d2a",
+      "modified_for_extraction": false
+    },
+    "app/events/__init__.py": {
+      "source_sha256": "aea12097b9546840bb332c7d99d18d2f892d7331384bc2dc9eca7355c7261bde",
+      "extracted_sha256": "aea12097b9546840bb332c7d99d18d2f892d7331384bc2dc9eca7355c7261bde",
+      "modified_for_extraction": false
+    },
+    "app/events/engine.py": {
+      "source_sha256": "bad8ace68b0529b0dd9d77681fbdd0aaa0317e9cc236b0909a559256c43ff147",
+      "extracted_sha256": "bad8ace68b0529b0dd9d77681fbdd0aaa0317e9cc236b0909a559256c43ff147",
+      "modified_for_extraction": false
+    },
+    "app/field_ingest/__init__.py": {
+      "source_sha256": "695125c5f09ed9a91896b2f68b3965899e0cfb03ba555188265d6807da645832",
+      "extracted_sha256": "1d7dd485515a6917f1f78435d1a920a48c2256dea01613bb2d115501f887d0a3",
+      "modified_for_extraction": true
+    },
+    "app/field_ingest/frames.py": {
+      "source_sha256": "f1b7fbf2b0078a2afcd86cf0a7a4cf77152d873c924aa7f49a1e871485578a6f",
+      "extracted_sha256": "f1b7fbf2b0078a2afcd86cf0a7a4cf77152d873c924aa7f49a1e871485578a6f",
+      "modified_for_extraction": false
+    },
+    "app/foul_detection/__init__.py": {
+      "source_sha256": "20776205a4ed492c10b2ca70be38aa97b5091b927622ca5e0e86888dadd1cecb",
+      "extracted_sha256": "20776205a4ed492c10b2ca70be38aa97b5091b927622ca5e0e86888dadd1cecb",
+      "modified_for_extraction": false
+    },
+    "app/foul_detection/detector.py": {
+      "source_sha256": "1d69b46d7e5208f8271760c742b773c4d64a2bcd097d4c40c70945efb106ba53",
+      "extracted_sha256": "1d69b46d7e5208f8271760c742b773c4d64a2bcd097d4c40c70945efb106ba53",
+      "modified_for_extraction": false
+    },
+    "app/foul_detection/predictor.py": {
+      "source_sha256": "78a0cc00a61914f1194b5a71dbe8c55ba31ddc86761207831ef34588fd6e3c95",
+      "extracted_sha256": "78a0cc00a61914f1194b5a71dbe8c55ba31ddc86761207831ef34588fd6e3c95",
+      "modified_for_extraction": false
+    },
+    "app/foul_detection/types.py": {
+      "source_sha256": "b8c0c79efe5b81358a9ed445aa8bbfa80130050ae6df31eb62c9fb0a0f51ac82",
+      "extracted_sha256": "b8c0c79efe5b81358a9ed445aa8bbfa80130050ae6df31eb62c9fb0a0f51ac82",
+      "modified_for_extraction": false
+    },
+    "app/geometry/__init__.py": {
+      "source_sha256": "87bf5ef877b9294e5f1bd0e178c0bc61ad49f81070ff44a5c1413eefae96741e",
+      "extracted_sha256": "87bf5ef877b9294e5f1bd0e178c0bc61ad49f81070ff44a5c1413eefae96741e",
+      "modified_for_extraction": false
+    },
+    "app/geometry/camera.py": {
+      "source_sha256": "cf0e9509c982c993128e136e7bb64af7cf667355bf0dda1d79dec7f59d321239",
+      "extracted_sha256": "cf0e9509c982c993128e136e7bb64af7cf667355bf0dda1d79dec7f59d321239",
+      "modified_for_extraction": false
+    },
+    "app/geometry/pitch_projection.py": {
+      "source_sha256": "cbb1b540e50656a78974418163eaeaf015dba1c53c1dd59b1e2f75a3d6ae29f8",
+      "extracted_sha256": "cbb1b540e50656a78974418163eaeaf015dba1c53c1dd59b1e2f75a3d6ae29f8",
+      "modified_for_extraction": false
+    },
+    "app/geometry/position_filter.py": {
+      "source_sha256": "52589495608af3af919ed09f2277cef96a3140c63b8c9cc2c525fee653f7f873",
+      "extracted_sha256": "52589495608af3af919ed09f2277cef96a3140c63b8c9cc2c525fee653f7f873",
+      "modified_for_extraction": false
+    },
+    "app/pipeline/__init__.py": {
+      "source_sha256": "b6dc5402fac75b99d8c389f0e49e2311bebed58f16a21120d83e34ad7ce3f4a0",
+      "extracted_sha256": "b6dc5402fac75b99d8c389f0e49e2311bebed58f16a21120d83e34ad7ce3f4a0",
+      "modified_for_extraction": false
+    },
+    "app/pipeline/buffer.py": {
+      "source_sha256": "f4bc808d4c6644b06ed0488e882b77d80b76da7bd6ebd5e15519e00d654a7137",
+      "extracted_sha256": "f4bc808d4c6644b06ed0488e882b77d80b76da7bd6ebd5e15519e00d654a7137",
+      "modified_for_extraction": false
+    },
+    "app/pipeline/engine.py": {
+      "source_sha256": "1ecb532c7247b504b68219f565f1a58a97944167ade7de7215787c5325ebd0c1",
+      "extracted_sha256": "1ecb532c7247b504b68219f565f1a58a97944167ade7de7215787c5325ebd0c1",
+      "modified_for_extraction": false
+    },
+    "app/pipeline/recorder.py": {
+      "source_sha256": "5986878e9f74995155a2b972554c374e3793dd3adee32a614aeddf5e676a6754",
+      "extracted_sha256": "5986878e9f74995155a2b972554c374e3793dd3adee32a614aeddf5e676a6754",
+      "modified_for_extraction": false
+    },
+    "app/pipeline/source.py": {
+      "source_sha256": "470f21a059746ce4f2d91b73478787a7029354c9a5daffb85a9371a645dd1bcb",
+      "extracted_sha256": "470f21a059746ce4f2d91b73478787a7029354c9a5daffb85a9371a645dd1bcb",
+      "modified_for_extraction": false
+    },
+    "app/services/__init__.py": {
+      "source_sha256": "872ec1e8370fa393db0910437ed61d5e5da5f10530827a65591ef69093771bee",
+      "extracted_sha256": "47f4f3a1e43e01a706e65385be7928f872a2e80244229aa816b30b5d479cdce5",
+      "modified_for_extraction": true
+    },
+    "app/services/frame_encoder.py": {
+      "source_sha256": "77693a7ba9352f1a6cf4fa3f5db949c97df0b2b499b08e6cb999da81f930f6dd",
+      "extracted_sha256": "77693a7ba9352f1a6cf4fa3f5db949c97df0b2b499b08e6cb999da81f930f6dd",
+      "modified_for_extraction": false
+    },
+    "app/state/__init__.py": {
+      "source_sha256": "bde035e6e3d006d37e5486f06825a6e85bb63cf793b8e3aee79a6faab26adcd5",
+      "extracted_sha256": "bde035e6e3d006d37e5486f06825a6e85bb63cf793b8e3aee79a6faab26adcd5",
+      "modified_for_extraction": false
+    },
+    "app/state/events.py": {
+      "source_sha256": "65048d81b61a88bf41f36a8475e0dd5d73cf0810e88628f2c7dfcd7ac89248a7",
+      "extracted_sha256": "65048d81b61a88bf41f36a8475e0dd5d73cf0810e88628f2c7dfcd7ac89248a7",
+      "modified_for_extraction": false
+    },
+    "app/state/models.py": {
+      "source_sha256": "002b22f3559cf39ed21d08bd6f2a54de268683ebc5f281baf5556e0507218cdc",
+      "extracted_sha256": "002b22f3559cf39ed21d08bd6f2a54de268683ebc5f281baf5556e0507218cdc",
+      "modified_for_extraction": false
+    },
+    "app/state/store.py": {
+      "source_sha256": "88cd54b42e18ccb6ebd473223f8d20d89257c28adce4d4a8bd502b14dae32731",
+      "extracted_sha256": "88cd54b42e18ccb6ebd473223f8d20d89257c28adce4d4a8bd502b14dae32731",
+      "modified_for_extraction": false
+    },
+    "app/vision/__init__.py": {
+      "source_sha256": "fc1683fea6780a5bc25edf33f61293bf5854fb75f94f24efda90974ccc462c8a",
+      "extracted_sha256": "fc1683fea6780a5bc25edf33f61293bf5854fb75f94f24efda90974ccc462c8a",
+      "modified_for_extraction": false
+    },
+    "app/vision/backends.py": {
+      "source_sha256": "89e2b16c32ac9bd29a1f776211461137767660f44b2e369d0ea29bcb070c8a19",
+      "extracted_sha256": "89e2b16c32ac9bd29a1f776211461137767660f44b2e369d0ea29bcb070c8a19",
+      "modified_for_extraction": false
+    },
+    "app/vision/core.py": {
+      "source_sha256": "176458a2fdb65deea91d5c70d208abc566d4cf08d64196bcfa8ad3622822ae7e",
+      "extracted_sha256": "176458a2fdb65deea91d5c70d208abc566d4cf08d64196bcfa8ad3622822ae7e",
+      "modified_for_extraction": false
+    },
+    "app/vision/display.py": {
+      "source_sha256": "8821d0145dfa13f3f8d6a90676aef12de084670c5fa54c1e366b888a01f40158",
+      "extracted_sha256": "8821d0145dfa13f3f8d6a90676aef12de084670c5fa54c1e366b888a01f40158",
+      "modified_for_extraction": false
+    },
+    "app/vision/entities.py": {
+      "source_sha256": "abf5e28b98895d2467e8639498652c0299c7d40f2beb3577b812f3260dc1adbd",
+      "extracted_sha256": "abf5e28b98895d2467e8639498652c0299c7d40f2beb3577b812f3260dc1adbd",
+      "modified_for_extraction": false
+    },
+    "app/vision/role.py": {
+      "source_sha256": "95cf325c704038e180d85d23b84507a053046b9a78ca2028ef88d6574dc888a4",
+      "extracted_sha256": "95cf325c704038e180d85d23b84507a053046b9a78ca2028ef88d6574dc888a4",
+      "modified_for_extraction": false
+    },
+    "app/vision/semantics.py": {
+      "source_sha256": "47988154977eb91fec6ca1fdb49c8db3041e32d5d1402480ca7dbaf5cdd60578",
+      "extracted_sha256": "47988154977eb91fec6ca1fdb49c8db3041e32d5d1402480ca7dbaf5cdd60578",
+      "modified_for_extraction": false
+    },
+    "tools/__init__.py": {
+      "source_sha256": null,
+      "extracted_sha256": "85eef1525438b471ae5ca390a002809d3766bbf0d41f383ff62a72a8626d8935",
+      "modified_for_extraction": true
+    },
+    "tools/render_diagnostic_video.py": {
+      "source_sha256": "ef3eaca701c8491a7e4230482364fd44bf59e3850d2a1d756df56613e9d5fd0b",
+      "extracted_sha256": "ef3eaca701c8491a7e4230482364fd44bf59e3850d2a1d756df56613e9d5fd0b",
+      "modified_for_extraction": false
+    },
+    "tools/run_night_ablation.py": {
+      "source_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245",
+      "extracted_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245",
+      "modified_for_extraction": false
+    }
+  },
+  "dependency_edges": {
+    "tools/run_night_ablation.py": [
+      "app/classification/team_calibration/bundle.py",
+      "app/foul_detection/detector.py",
+      "app/foul_detection/predictor.py",
+      "app/pipeline/buffer.py",
+      "app/pipeline/engine.py",
+      "app/pipeline/source.py",
+      "app/state/store.py",
+      "tools/render_diagnostic_video.py"
+    ],
+    "tools/render_diagnostic_video.py": [
+      "app/annotators/pitch.py",
+      "app/config/pitch.py",
+      "app/constants/paths.py",
+      "app/pipeline/engine.py",
+      "app/pipeline/source.py",
+      "app/state/models.py",
+      "app/state/store.py"
+    ],
+    "tools/__init__.py": [],
+    "app/classification/team_calibration/bundle.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/foul_detection/detector.py": [
+      "app/foul_detection/predictor.py",
+      "app/foul_detection/types.py"
+    ],
+    "app/foul_detection/predictor.py": [
+      "app/foul_detection/types.py"
+    ],
+    "app/pipeline/buffer.py": [],
+    "app/pipeline/engine.py": [
+      "app/classification/team_calibration/appearance_features.py",
+      "app/classification/team_calibration/bundle.py",
+      "app/classification/team_calibration/predictor.py",
+      "app/classification/team_calibration/role_predictor.py",
+      "app/classification/team_calibration/runtime.py",
+      "app/constants/paths.py",
+      "app/events/engine.py",
+      "app/field_ingest/frames.py",
+      "app/foul_detection/detector.py",
+      "app/pipeline/buffer.py",
+      "app/pipeline/recorder.py",
+      "app/pipeline/source.py",
+      "app/state/models.py",
+      "app/state/store.py",
+      "app/vision/core.py",
+      "app/vision/display.py",
+      "app/vision/role.py",
+      "app/vision/semantics.py"
+    ],
+    "app/pipeline/source.py": [
+      "app/field_ingest/frames.py",
+      "app/state/models.py",
+      "app/state/store.py"
+    ],
+    "app/state/store.py": [
+      "app/classification/team_calibration/clip.py",
+      "app/classification/team_calibration/session.py",
+      "app/services/frame_encoder.py",
+      "app/state/models.py"
+    ],
+    "app/annotators/pitch.py": [
+      "app/config/pitch.py"
+    ],
+    "app/config/pitch.py": [],
+    "app/constants/paths.py": [],
+    "app/state/models.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/classification/team_calibration/__init__.py": [
+      "app/classification/team_calibration/appearance_features.py",
+      "app/classification/team_calibration/bundle.py",
+      "app/classification/team_calibration/color_features.py",
+      "app/classification/team_calibration/predictor.py",
+      "app/classification/team_calibration/prototypes.py",
+      "app/classification/team_calibration/quality.py",
+      "app/classification/team_calibration/roi.py",
+      "app/classification/team_calibration/role_predictor.py",
+      "app/classification/team_calibration/runtime.py",
+      "app/classification/team_calibration/session.py",
+      "app/classification/team_calibration/track_features.py",
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/classification/__init__.py": [],
+    "app/__init__.py": [],
+    "app/classification/team_calibration/types.py": [],
+    "app/foul_detection/__init__.py": [
+      "app/foul_detection/detector.py"
+    ],
+    "app/foul_detection/types.py": [],
+    "app/pipeline/__init__.py": [
+      "app/pipeline/buffer.py",
+      "app/pipeline/source.py"
+    ],
+    "app/events/engine.py": [
+      "app/state/models.py"
+    ],
+    "app/field_ingest/frames.py": [],
+    "app/pipeline/recorder.py": [
+      "app/state/store.py"
+    ],
+    "app/vision/core.py": [
+      "app/config/pitch.py",
+      "app/constants/classes.py",
+      "app/constants/paths.py",
+      "app/geometry/camera.py",
+      "app/geometry/pitch_projection.py",
+      "app/geometry/position_filter.py",
+      "app/vision/backends.py",
+      "app/vision/entities.py"
+    ],
+    "app/vision/display.py": [],
+    "app/classification/team_calibration/appearance_features.py": [],
+    "app/classification/team_calibration/predictor.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/classification/team_calibration/role_predictor.py": [
+      "app/classification/team_calibration/appearance_features.py",
+      "app/classification/team_calibration/color_features.py",
+      "app/classification/team_calibration/quality.py",
+      "app/classification/team_calibration/roi.py",
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/classification/team_calibration/runtime.py": [
+      "app/classification/team_calibration/appearance_features.py",
+      "app/classification/team_calibration/color_features.py",
+      "app/classification/team_calibration/predictor.py",
+      "app/classification/team_calibration/quality.py",
+      "app/classification/team_calibration/roi.py",
+      "app/classification/team_calibration/track_features.py",
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/vision/role.py": [],
+    "app/vision/semantics.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/state/__init__.py": [
+      "app/state/events.py",
+      "app/state/models.py",
+      "app/state/store.py"
+    ],
+    "app/classification/team_calibration/session.py": [
+      "app/classification/team_calibration/appearance_features.py",
+      "app/classification/team_calibration/bundle.py",
+      "app/classification/team_calibration/color_features.py",
+      "app/classification/team_calibration/prototypes.py",
+      "app/classification/team_calibration/quality.py",
+      "app/classification/team_calibration/roi.py",
+      "app/classification/team_calibration/track_features.py",
+      "app/classification/team_calibration/types.py",
+      "app/classification/team_calibration/validation.py"
+    ],
+    "app/classification/team_calibration/clip.py": [
+      "app/classification/team_calibration/quality.py",
+      "app/classification/team_calibration/roi.py",
+      "app/classification/team_calibration/session.py",
+      "app/classification/team_calibration/types.py",
+      "app/vision/core.py"
+    ],
+    "app/services/frame_encoder.py": [],
+    "app/annotators/__init__.py": [],
+    "app/config/__init__.py": [],
+    "app/constants/__init__.py": [],
+    "app/classification/team_calibration/color_features.py": [],
+    "app/classification/team_calibration/prototypes.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/classification/team_calibration/quality.py": [],
+    "app/classification/team_calibration/roi.py": [],
+    "app/classification/team_calibration/track_features.py": [
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/events/__init__.py": [
+      "app/events/engine.py"
+    ],
+    "app/field_ingest/__init__.py": [],
+    "app/vision/__init__.py": [
+      "app/vision/backends.py",
+      "app/vision/core.py",
+      "app/vision/display.py",
+      "app/vision/entities.py",
+      "app/vision/semantics.py"
+    ],
+    "app/constants/classes.py": [],
+    "app/geometry/camera.py": [],
+    "app/geometry/pitch_projection.py": [
+      "app/config/pitch.py"
+    ],
+    "app/geometry/position_filter.py": [],
+    "app/vision/entities.py": [],
+    "app/vision/backends.py": [],
+    "app/state/events.py": [],
+    "app/classification/team_calibration/validation.py": [
+      "app/classification/team_calibration/prototypes.py",
+      "app/classification/team_calibration/types.py"
+    ],
+    "app/services/__init__.py": [],
+    "app/geometry/__init__.py": []
+  },
+  "external_import_names": [
+    "__future__",
+    "abc",
+    "argparse",
+    "collections",
+    "copy",
+    "cv2",
+    "dataclasses",
+    "datetime",
+    "enum",
+    "gc",
+    "hashlib",
+    "json",
+    "logging",
+    "model",
+    "numpy",
+    "os",
+    "pathlib",
+    "psutil",
+    "pydantic",
+    "pynvml",
+    "shutil",
+    "subprocess",
+    "supervision",
+    "sys",
+    "tempfile",
+    "threading",
+    "time",
+    "torch",
+    "torchvision",
+    "typing",
+    "ultralytics",
+    "uuid"
+  ]
+}

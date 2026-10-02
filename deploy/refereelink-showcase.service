@@ -1,0 +1,17 @@
+[Unit]
+Description=RefereeLink focused CUDA showcase
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/codex-runs/refereelink-showcase
+Environment=PYTHONDONTWRITEBYTECODE=1
+EnvironmentFile=-%h/codex-runs/refereelink-showcase/deploy/showcase.env
+ExecStart=%h/codex-runs/refereelink-showcase/.venv/bin/python -m uvicorn showcase.app:app --app-dir server --host 0.0.0.0 --port 8010
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=default.target

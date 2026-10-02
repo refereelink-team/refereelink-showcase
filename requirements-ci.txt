@@ -1,0 +1,10 @@
+# Direct test/tool versions validated on the remote Linux host.
+# Runtime/model requirements are separately recorded in backend_core/.
+fastapi==0.139.0
+uvicorn==0.51.0
+httpx==0.28.1
+pydantic==2.13.4
+pyserial==3.5
+pytest==9.1.1
+pytest-asyncio==1.4.0
+ruff==0.15.21
