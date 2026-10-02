@@ -10,7 +10,7 @@ export interface LocalizationWindow {
   startS: number;
   endS: number;
   peakS: number;
-  source: 'gradcam' | 'event_prior';
+  source: 'gradcam';
 }
 
 export interface MediaBounds {
@@ -91,21 +91,21 @@ export function playbackClockTime(
   return clamp(Math.max(previousTimeS, next), 0, durationS);
 }
 
-export function localizationWindow(box: LocalizationBox, eventTimeS: number): LocalizationWindow {
-  if (Number.isFinite(box.active_start_s) && Number.isFinite(box.active_end_s)) {
-    const startS = Math.max(0, box.active_start_s as number);
-    const endS = Math.max(startS, box.active_end_s as number);
-    const peakS = Number.isFinite(box.peak_s) ? (box.peak_s as number) : (startS + endS) / 2;
-    return {
-      startS,
-      endS,
-      peakS: clamp(peakS, startS, endS),
-      source: box.temporal_source === 'event_prior' ? 'event_prior' : 'gradcam',
-    };
-  }
-  // A missing model window is explicitly presented as an event prior, never as CAM evidence.
-  const peakS = Number.isFinite(eventTimeS) ? Math.max(0, eventTimeS) : 0;
-  return { startS: Math.max(0, peakS - 0.5), endS: peakS + 0.5, peakS, source: 'event_prior' };
+export function localizationWindow(box: LocalizationBox): LocalizationWindow | null {
+  if (
+    box.temporal_source !== 'gradcam' ||
+    localizationTier(box) === 'hidden' ||
+    !Number.isFinite(box.active_start_s) ||
+    !Number.isFinite(box.active_end_s) ||
+    !Number.isFinite(box.peak_s)
+  )
+    return null;
+  const startS = box.active_start_s as number;
+  const endS = box.active_end_s as number;
+  const peakS = box.peak_s as number;
+  if (startS < 0 || endS <= startS || peakS < startS || peakS > endS) return null;
+  // Legacy priors and incomplete responses never manufacture a playback focus.
+  return { startS, endS, peakS, source: 'gradcam' };
 }
 
 export function temporalFocusStrength(
@@ -161,11 +161,20 @@ export function localizationTier(box: LocalizationBox): 'normal' | 'caution' | '
   return box.display_tier ?? (box.reliable === false ? 'hidden' : 'normal');
 }
 
-export function decisionFocusTime(caseData: MultiviewCase, decision: MultiviewDecision): number {
-  const view = caseData.videos[0];
-  if (!view) return Math.max(0, caseData.event_time_s);
-  const box = decision.localization[view.camera_id];
-  if (!box) return Math.max(0, caseData.event_time_s);
-  const window = localizationWindow(box, localTime(caseData.event_time_s, view));
-  return Math.max(0, commonTime(window.peakS, view));
+export function decisionFocusTime(
+  caseData: MultiviewCase,
+  decision: MultiviewDecision,
+): number | null {
+  let best: { timeS: number; attention: number } | null = null;
+  for (const [index, view] of caseData.videos.entries()) {
+    const box = decision.localization[view.camera_id];
+    const window = box ? localizationWindow(box) : null;
+    if (!window) continue;
+    const timeS = commonTime(window.peakS, view);
+    if (!Number.isFinite(timeS) || timeS < 0) continue;
+    const weight = decision.view_attention?.[index];
+    const attention = Number.isFinite(weight) && weight >= 0 ? weight : 0;
+    if (!best || attention > best.attention) best = { timeS, attention };
+  }
+  return best?.timeS ?? null;
 }

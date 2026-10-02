@@ -49,12 +49,11 @@ export interface SynchronizedEvidencePlayerProps {
   onTimeChange?: (commonTimeS: number) => void;
 }
 
-function sourceLabel(box: LocalizationBox, source: 'gradcam' | 'event_prior') {
-  if (source === 'event_prior') return '事件先验';
-  if (box.source === 'gradcam') return 'Grad-CAM';
-  if (box.source === 'optical_flow') return '光流关注';
-  if (box.source === 'scripted') return '脚本关注';
-  return '关注区域';
+function spatialSourceLabel(box: LocalizationBox) {
+  if (box.source === 'gradcam') return 'Visual Attribution';
+  if (box.source === 'optical_flow') return 'Motion Cue';
+  if (box.source === 'scripted') return 'Rule Cue';
+  return 'Visual Focus';
 }
 
 function EvidenceTile({
@@ -73,7 +72,6 @@ function EvidenceTile({
   waiting,
   duration,
   commonTimeS,
-  eventTimeS,
   box,
   attention,
   showAttention,
@@ -93,7 +91,6 @@ function EvidenceTile({
   waiting: boolean;
   duration: number;
   commonTimeS: number;
-  eventTimeS: number;
   box?: LocalizationBox;
   attention?: number;
   showAttention: boolean;
@@ -130,7 +127,7 @@ function EvidenceTile({
     };
   }, [measure]);
   const position = mediaPosition(commonTimeS, view, duration);
-  const attentionWindow = box ? localizationWindow(box, localTime(eventTimeS, view)) : null;
+  const attentionWindow = box ? localizationWindow(box) : null;
   const rect = box ? expandedFocusRect(box.rect) : null;
   const tier = box ? localizationTier(box) : 'normal';
   const strength =
@@ -225,7 +222,7 @@ function EvidenceTile({
         >
           <strong>机位 {index + 1}</strong>
           <span>{view.display_name}</span>
-          {hasAttention && <small>权重 {Math.round((attention as number) * 100)}%</small>}
+          {hasAttention && <small>Weight {Math.round((attention as number) * 100)}%</small>}
         </button>
         <span className="se-offset">
           {view.sync_offset_ms >= 0 ? '+' : ''}
@@ -244,10 +241,28 @@ function EvidenceTile({
             )}
           </div>
         )}
-        {box && attentionWindow && showAttention && (
-          <div className={`se-source-label ${tier}`} title={box.reliability_reasons?.join(' · ')}>
-            {sourceLabel(box, attentionWindow.source)}
-            {tier === 'hidden' ? ' · 低可靠，区域隐藏' : tier === 'caution' ? ' · 谨慎参考' : ''}
+        {box && showAttention && (
+          <div className={`se-source-label ${tier}`}>
+            <span className="se-source-chip" title={`Spatial method: ${box.source}`}>
+              <small>Spatial</small>
+              {spatialSourceLabel(box)}
+            </span>
+            <span
+              className="se-source-chip"
+              title={
+                attentionWindow
+                  ? 'Temporal source: Grad-CAM response'
+                  : 'No reliable model-derived temporal focus is available'
+              }
+            >
+              <small>Temporal</small>
+              {attentionWindow ? 'Temporal Saliency' : 'Temporal Unavailable'}
+            </span>
+            {tier !== 'normal' && (
+              <span className="se-source-quality" title={box.reliability_reasons?.join(' · ')}>
+                {tier === 'hidden' ? 'Low Signal · Hidden' : 'Limited Signal'}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -596,7 +611,7 @@ export default function SynchronizedEvidencePlayer({
               checked={showAttention}
               onChange={(event) => setShowAttention(event.target.checked)}
             />
-            显示关注区域
+            Visual Attribution
           </label>
         )}
       </div>
@@ -624,7 +639,6 @@ export default function SynchronizedEvidencePlayer({
             waiting={Boolean(waiting[view.camera_id])}
             duration={durations[view.camera_id] ?? 0}
             commonTimeS={time}
-            eventTimeS={caseData.event_time_s}
             box={decision?.localization[view.camera_id]}
             attention={decision?.view_attention[index]}
             showAttention={showAttention}
@@ -703,9 +717,7 @@ export default function SynchronizedEvidencePlayer({
       <div className="se-timelines" aria-label="各机位证据时间轴">
         {caseData.videos.map((view, index) => {
           const box = decision?.localization[view.camera_id];
-          const window = box
-            ? localizationWindow(box, localTime(caseData.event_time_s, view))
-            : null;
+          const window = box ? localizationWindow(box) : null;
           const range = !errors[view.camera_id]
             ? viewRange(view, durations[view.camera_id] ?? 0)
             : null;
@@ -767,14 +779,14 @@ export default function SynchronizedEvidencePlayer({
                       left: `${windowStart}%`,
                       width: `${Math.max(0.3, windowEnd - windowStart)}%`,
                     }}
-                    title={`${sourceLabel(box!, window.source)} · ${start.toFixed(2)}–${end.toFixed(2)} s`}
+                    title={`Temporal Saliency · ${start.toFixed(2)}–${end.toFixed(2)} s`}
                   />
                 )}
                 {windowVisible && peak >= (range?.startS ?? 0) && peak <= (range?.endS ?? 0) && (
                   <span
                     className="se-temporal-peak"
                     style={{ left: `${timelinePercent(peak, duration)}%` }}
-                    title={`关注峰值 ${peak.toFixed(2)} s`}
+                    title={`Saliency Peak · ${peak.toFixed(2)} s`}
                   />
                 )}
                 <span
@@ -798,20 +810,22 @@ export default function SynchronizedEvidencePlayer({
       <div className="se-timeline-legend">
         <span>
           <i className="se-legend-range" />
-          可播放片段
+          Evidence Range
         </span>
-        {decision && (
-          <>
+        {decision &&
+          (caseData.videos.some((view) => {
+            const box = decision.localization[view.camera_id];
+            return box && localizationWindow(box) !== null;
+          }) ? (
             <span>
               <i className="se-legend-focus" />
-              模型关注窗口
+              Temporal Saliency
             </span>
-            <span>
-              <i className="se-legend-prior" />
-              事件先验
+          ) : (
+            <span title="No reliable model-derived temporal focus is available">
+              Temporal Unavailable
             </span>
-          </>
-        )}
+          ))}
       </div>
     </div>
   );

@@ -67,19 +67,32 @@ test('shared timeline covers longer camera tails and clamps marks to real bounds
   assert.equal(timelinePercent(2, 0), 0);
 });
 
-test('missing temporal inference is labelled event prior rather than model attention', () => {
-  const prior = localizationWindow({ rect: [0, 0, 10, 10], score: 0.5, source: 'gradcam' }, 4);
-  assert.deepEqual(prior, { startS: 3.5, endS: 4.5, peakS: 4, source: 'event_prior' });
-  assert.equal(localizationWindow({ ...box, peak_s: 10 }, 4).peakS, 3);
-  assert.equal(
-    localizationWindow({ ...box, temporal_source: 'event_prior' }, 4).source,
-    'event_prior',
-  );
-  assert.equal(localizationWindow({ ...box, active_start_s: Number.NaN }, 4).source, 'event_prior');
+test('missing or legacy temporal responses never manufacture an event anchor', () => {
+  assert.equal(localizationWindow({ rect: [0, 0, 10, 10], score: 0.5, source: 'gradcam' }), null);
+  assert.equal(localizationWindow({ ...box, temporal_source: 'event_prior' }), null);
+  assert.equal(localizationWindow({ ...box, temporal_source: null }), null);
+  assert.equal(localizationWindow({ ...box, temporal_source: undefined }), null);
+  assert.equal(localizationWindow({ ...box, active_start_s: null }), null);
+  assert.equal(localizationWindow({ ...box, peak_s: null }), null);
+});
+
+test('temporal focus rejects invalid windows and hidden evidence without inventing a peak', () => {
+  assert.deepEqual(localizationWindow(box), { startS: 2, endS: 3, peakS: 2.5, source: 'gradcam' });
+  assert.equal(localizationWindow({ ...box, active_start_s: Number.NaN }), null);
+  assert.equal(localizationWindow({ ...box, active_end_s: Infinity }), null);
+  assert.equal(localizationWindow({ ...box, active_start_s: -1 }), null);
+  assert.equal(localizationWindow({ ...box, active_start_s: 4 }), null);
+  assert.equal(localizationWindow({ ...box, active_end_s: 2 }), null);
+  assert.equal(localizationWindow({ ...box, peak_s: 10 }), null);
+  assert.equal(localizationWindow({ ...box, display_tier: 'hidden' }), null);
+  assert.equal(localizationWindow({ ...box, reliable: false }), null);
+  // Spatial cautions do not invalidate an otherwise genuine temporal response.
+  assert.notEqual(localizationWindow({ ...box, reliable: false, display_tier: 'caution' }), null);
 });
 
 test('attention fades outside its window and uses only genuine temporal score bins', () => {
-  const window = localizationWindow(box, 2.5);
+  const window = localizationWindow(box);
+  assert.ok(window);
   assert.equal(temporalFocusStrength(box, 0, window), 0);
   assert.equal(temporalFocusStrength(box, 5, window), 0);
   assert.equal(
@@ -115,16 +128,52 @@ test('overlay coordinates account for letterboxing and reject invalid geometry',
   assert.equal(expandedFocusRect([10, 10, -1, 20]), null);
 });
 
-test('analysis focus restores a model peak to shared time and distinguishes event fallback', () => {
-  const caseData = { videos: [camera('main', 500)], event_time_s: 2 } as MultiviewCase;
-  const decision = { localization: { main: box } } as MultiviewDecision;
-  assert.equal(decisionFocusTime(caseData, decision), 2);
-  assert.equal(decisionFocusTime(caseData, { localization: {} } as MultiviewDecision), 2);
+test('analysis focus uses an eligible model peak and only camera synchronization offsets', () => {
+  const caseData = { videos: [camera('main', 500), camera('side', -400)] } as MultiviewCase;
+  const decision = {
+    localization: { main: box, side: { ...box, peak_s: 2.75 } },
+    view_attention: [0.2, 0.8],
+  } as MultiviewDecision;
+  assert.equal(decisionFocusTime(caseData, decision), 3.15);
+  assert.equal(
+    decisionFocusTime(caseData, {
+      ...decision,
+      localization: { main: box, side: { ...box, temporal_source: 'event_prior' } },
+    }),
+    2,
+  );
+  assert.equal(
+    decisionFocusTime(caseData, {
+      ...decision,
+      localization: { main: box, side: { ...box, display_tier: 'hidden' } },
+    }),
+    2,
+  );
+});
+
+test('analysis with no eligible temporal evidence does not seek to an annotated time', () => {
+  const caseData = { videos: [camera('main', 500)] } as MultiviewCase;
+  assert.equal(decisionFocusTime(caseData, { localization: {} } as MultiviewDecision), null);
   assert.equal(
     decisionFocusTime(caseData, {
       localization: { main: { ...box, active_start_s: null, active_end_s: null } },
     } as MultiviewDecision),
-    2,
+    null,
+  );
+  assert.equal(
+    decisionFocusTime(caseData, {
+      localization: { main: { ...box, temporal_source: 'event_prior' } },
+    } as MultiviewDecision),
+    null,
+  );
+  assert.equal(
+    decisionFocusTime(
+      { videos: [camera('main', 5000)] } as MultiviewCase,
+      {
+        localization: { main: box },
+      } as MultiviewDecision,
+    ),
+    null,
   );
 });
 

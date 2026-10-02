@@ -19,7 +19,6 @@ export interface MultiviewCase {
   match_name: string;
   match_clock: string;
   description: string;
-  event_time_s: number;
   review_state: ReviewState;
   risk_level: RiskLevel;
   zone: string;
@@ -133,6 +132,7 @@ export interface LocalizationBox {
   active_end_s?: number | null;
   peak_s?: number | null;
   temporal_bins?: TemporalBin[];
+  // Kept for historical API compatibility; event_prior is never rendered as model focus.
   temporal_source?: 'gradcam' | 'event_prior' | null;
   display_tier?: 'normal' | 'caution' | 'hidden';
   reliable?: boolean;
@@ -144,7 +144,7 @@ export interface MultiviewDecision {
   analysis_id: string;
   event_id: string;
   case_id: string;
-  timestamp: number;
+  timestamp: number | null;
   decision: string;
   decision_zh: string;
   action: string;
