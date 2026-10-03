@@ -2,7 +2,7 @@
 # These direct versions match the actual 2026-10-02 CUDA validation environment.
 torch==2.14.0
 torchvision==0.28.0
-ultralytics==8.4.95
+ultralytics==8.4.166
 supervision==0.29.1
 numpy==2.5.3
 opencv-python==5.0.0.93
