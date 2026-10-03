@@ -20,6 +20,13 @@ extraction preserved production algorithm bytes. Subsequent local production
 corrections are recorded separately from the original source identities and retain
 verifiable current hashes in the manifest. Two package initializers omit unrelated
 service exports (`app.field_ingest`, `app.services`), and `tools/__init__.py` is added.
+The versioned causal foul modules are original Showcase additions; their source
+hashes are explicitly null and their current hashes are recorded as local work.
+They do not change the separate multi-view adjudication service. Their research
+profiles are opt-in until separately evaluated. Contact V3 can become the default
+only with a private qualification binding its configuration, checkpoint, source
+manifest and development-clip evidence. It makes no actor-attribution claim and
+does not establish cross-match recognition accuracy.
 No original server/API/admin routes, frontend, multi-view review service, model
 weights, calibration files, user videos, tokens, or transport session data are bundled.
 
@@ -92,6 +99,9 @@ measurements and limitations.
 are new local modules with null upstream source identities and separately
 recorded extracted hashes. They implement source-isolated paint validation and
 explicit offline shot refinement. The strict-filter and selected-identity reset
-extensions preserve legacy defaults. The manifest currently tracks 60 Python
+extensions preserve legacy defaults. The manifest currently tracks 66 Python
 files and covers their internal imports; SciPy is a declared inference dependency.
 Causal runtime records and refined sequence records are separate artifacts.
+The experiment runner verifies every inventory hash before loading models and
+captures the verified manifest snapshot in its report. Missing or modified source
+files fail the run before inference rather than silently reporting stale hashes.

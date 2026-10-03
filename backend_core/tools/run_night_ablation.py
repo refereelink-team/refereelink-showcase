@@ -15,6 +15,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import gc
 import hashlib
+import io
 import json
 import logging
 import os
@@ -34,11 +35,15 @@ sys.path.insert(0, str(ROOT))
 from app.classification.team_calibration.bundle import CalibrationBundle
 from app.foul_detection.detector import FoulDetector
 from app.foul_detection.predictor import MViTFoulPredictor
+from app.foul_detection.causal_predictor import CausalMViTPredictor
+from app.foul_detection.temporal import PROFILE_IDS, TemporalFoulDetector, VerificationConfig, EXPERIMENTAL_CONFIG_V2
+from app.foul_detection.contact import ContactFoulDetector, CONTACT_VERIFICATION_V3
 from app.pipeline.buffer import PipelineMode
 from app.pipeline.engine import InferencePipeline
 from app.pipeline.source import LocalFileSource
 from app.state.store import StateStore
 from tools.render_diagnostic_video import _make_contact_sheet, _render_panel
+from tools.source_provenance import verified_source_manifest
 from app.config.pitch import PITCH_PROFILE_IDS, build_pitch_profile
 from app.geometry.sequence_refinement import refine_sequence
 from app.state.models import FrameState
@@ -222,6 +227,11 @@ class LoggedPredictor(MViTFoulPredictor):
 
     def __init__(self, checkpoint_path: str, code_path: str, handle) -> None:
         self.code_path = Path(code_path)
+        author_source = hashlib.sha256()
+        for path in sorted(self.code_path.rglob("*.py")):
+            author_source.update(path.relative_to(self.code_path).as_posix().encode())
+            author_source.update(path.read_bytes())
+        self.source_sha256 = author_source.hexdigest()
         self.handle = handle
         self.frame_id = 0
         self.last_record = None
@@ -297,7 +307,7 @@ class LoggedPredictor(MViTFoulPredictor):
             torch.cuda.synchronize()
             self.last_record["synchronized_latency_ms"] = (time.perf_counter() - started) * 1000
             self.last_record["prediction_returned"] = prediction is not None
-            self.last_record["above_threshold"] = self.last_record["combined_confidence"] >= self.threshold
+            self.last_record["above_threshold"] = self.last_record.get("offence_score", self.last_record["combined_confidence"]) >= self.threshold
             self.last_record["suppressed_no_offence"] = self.last_record["model_decision"] == "no_offence"
             self.last_record["precision"] = self.last_precision
             self.last_record["forward_attempts"] = self.attempts
@@ -308,6 +318,21 @@ class LoggedPredictor(MViTFoulPredictor):
         except Exception as exc:
             self.errors.append(f"{type(exc).__name__}: {exc}")
             raise
+
+
+class LoggedCausalPredictor(LoggedPredictor, CausalMViTPredictor):
+    """Keep raw negative windows while correcting temporal/model preprocessing."""
+
+    def _capture_forward(self, model, inputs, output):
+        super()._capture_forward(model, inputs, output)
+        if self.last_record is not None:
+            self.last_record.update(getattr(self, "window_context", {}))
+            self.last_record.update(
+                offence_score=1.0 - self.last_record["severity_probs"][0],
+                action_score=max(self.last_record["action_probs"]),
+                severity_score=max(self.last_record["severity_probs"]),
+                model_id=self.model_id,
+            )
 
 
 def label(player) -> str:
@@ -330,14 +355,21 @@ def render(frame, state, mode: str, record: dict | None, held_event, hold_until:
         text(annotated, label(player), (max(0, x1), max(45, y1 - 3)), color, 0.37)
     cv2.rectangle(annotated, (0, 0), (annotated.shape[1], 40), (28, 28, 28), -1)
     text(annotated, f"{mode} | frame {state.frame_id} | H=HOME A=AWAY GK=goalkeeper REF=referee U=UNKNOWN", (8, 17), scale=0.43)
-    latest_event = next((event for event in state.events if event.event_type == "foul_candidate"), None)
-    if latest_event is not None:
-        held_event, hold_until = latest_event, state.frame_id + 60
+    latest_events = [event for event in state.events if event.event_type == "foul_candidate"]
+    if latest_events:
+        held_event, hold_until = latest_events, state.frame_id + 60
     if held_event is not None and state.frame_id < hold_until:
-        details = held_event.foul_details or {}
-        text(annotated, f"MODEL FOUL CANDIDATE: {details.get('action', '')} {held_event.confidence:.3f} | HUMAN REVIEW REQUIRED", (8, 35), (80, 180, 255), 0.44)
+        labels = [f"{(event.foul_details or {}).get('action', '')} {event.confidence:.3f}" for event in held_event]
+        text(annotated, f"MODEL CANDIDATES: {', '.join(labels)} | HUMAN REVIEW REQUIRED", (8, 35), (80, 180, 255), 0.44)
+        for event in held_event:
+            evidence = event.evidence or {}
+            region = evidence.get("region_xyxy")
+            if region:
+                x1, y1, x2, y2 = map(int, region)
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), (50, 220, 255), 2)
+                text(annotated, f"event {evidence['event_time_s']:.2f}s / alert {evidence['emitted_time_s']:.2f}s", (x1, max(55, y1 - 8)), (50, 220, 255), .42)
     elif record is not None:
-        text(annotated, f"model: {record['model_decision']} / {record['model_action']} score={record['combined_confidence']:.3f} | model output only", (8, 35), (195, 195, 195), 0.43)
+        text(annotated, f"model: {record.get('model_decision', record.get('decision'))} / {record.get('model_action', record.get('action'))} score={record.get('offence_score', record.get('combined_confidence', 0)):.3f} | model output only", (8, 35), (195, 195, 195), 0.43)
     else:
         text(annotated, "foul model disabled" if mode == "projection_only" else "foul model warming up (24-frame window)", (8, 35), (195, 195, 195), 0.43)
     if mode != "foul_only":
@@ -361,6 +393,13 @@ def render(frame, state, mode: str, record: dict | None, held_event, hold_until:
 
 
 def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
+    source_snapshot = verified_source_manifest(ROOT)
+    args = deepcopy(args)
+    foul_profile = getattr(args, "foul_profile", "legacy-v1")
+    causal = foul_profile != "legacy-v1" and mode != "projection_only"
+    defaults = CONTACT_VERIFICATION_V3 if foul_profile == "mvit-contact-v3" else EXPERIMENTAL_CONFIG_V2
+    if args.threshold is None:
+        args.threshold = defaults.offence_threshold if causal else 0.48
     pitch_profile_id = getattr(args, "pitch_profile", "legacy")
     pitch_config, paint_enabled = build_pitch_profile(pitch_profile_id)
     job_started_at = datetime.now(timezone.utc).isoformat()
@@ -384,13 +423,38 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     events_log = (output / "candidate-events.jsonl").open("w")
     predictor = None
     detector = None
+    # Capture assets before loading: a later on-disk replacement cannot relabel
+    # an already-running model or calibration as another validated experiment.
+    asset_snapshot = {name: {"path": path, "sha256": sha256(Path(path))}
+                      for name, path in (("player", args.player_model), ("pitch", args.pitch_model),
+                                         ("foul", args.multidim_model if foul_profile == "multidim-full-v2" else args.foul_model))}
+    bundle_sha256 = sha256(Path(args.bundle))
     load_started = time.perf_counter()
     if mode != "projection_only":
-        predictor = LoggedPredictor(args.foul_model, args.foul_code, log)
+        if foul_profile == "multidim-full-v2":
+            from app.foul_detection.multidim import MultiDimStackerPredictor
+            predictor = MultiDimStackerPredictor(args.multidim_model, args.multidim_code)
+        else:
+            predictor_class = LoggedCausalPredictor if causal else LoggedPredictor
+            predictor = predictor_class(args.foul_model, args.foul_code, io.StringIO() if causal else log)
         predictor.media_pts_ms = meta["decoded_timestamps_ms"]
         predictor.threshold = args.threshold
-        detector = FoulDetector(args.foul_model, device="cuda", predictor=predictor,
-            input_fps=source.fps, confidence_threshold=args.threshold, cooldown_frames=25)
+        if causal:
+            verification_config = VerificationConfig(
+                offence_threshold=args.threshold, action_threshold=args.action_threshold if args.action_threshold is not None else defaults.action_threshold,
+                confirmation_windows=args.confirmation_windows if args.confirmation_windows is not None else defaults.confirmation_windows,
+                evidence_threshold=args.evidence_threshold if args.evidence_threshold is not None else defaults.evidence_threshold,
+                post_contact_s=args.post_contact_s if args.post_contact_s is not None else defaults.post_contact_s,
+                max_windows_per_tick=args.max_windows_per_tick,
+            )
+            detector = (ContactFoulDetector(predictor, config=verification_config,
+                            record_sink=lambda record: line_json(log, record))
+                        if foul_profile == "mvit-contact-v3" else
+                        TemporalFoulDetector(predictor, foul_profile, verification_config,
+                            record_sink=lambda record: line_json(log, record)))
+        else:
+            detector = FoulDetector(args.foul_model, device="cuda", predictor=predictor,
+                input_fps=source.fps, confidence_threshold=args.threshold, cooldown_frames=25)
     captured = {}
     pipeline = InferencePipeline(source, store, device="cuda", mode=PipelineMode.OFFLINE,
         player_model_path=args.player_model, pitch_model_path=args.pitch_model,
@@ -406,6 +470,48 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     assert pipeline._vision_core.enable_pitch == (mode != "foul_only")
     if mode != "projection_only":
         assert pipeline._foul_detector is detector and predictor is not None
+    warmup_report = None
+    if causal:
+        # Compile/initialize CUDA kernels before arrival pacing starts. Synthetic
+        # frames contain no evidence, and never participate in event confirmation.
+        predictor.frame_id = 1
+        warmup_started = time.perf_counter()
+        predictor.predict([np.zeros((source.frame_height, source.frame_width, 3), dtype=np.uint8)] * predictor.temporal_frames)
+        warmup_report = {"seconds": time.perf_counter() - warmup_started,
+                         "synthetic": True, "forward_windows": predictor.records,
+                         "fp32_retries": predictor.fp32_retry_count}
+        vision_started = time.perf_counter()
+        synthetic = np.zeros((source.frame_height, source.frame_width, 3), dtype=np.uint8)
+        pipeline._vision_core._predict_player(synthetic)
+        # Dynamic semantic batches should not repeatedly benchmark CUDA
+        # convolutions in the arrival loop. Warm the same learned models with
+        # synthetic crops without updating any track or team feature bank.
+        torch.backends.cudnn.benchmark = False
+        extractors = set()
+        warmed_semantic_batches = []
+        for classifier in (pipeline._semantic_manager.role_classifier,
+                           pipeline._semantic_manager.team_classifier):
+            extractor = getattr(classifier, "appearance_extractor", None)
+            if extractor is not None and id(extractor) not in extractors:
+                extractors.add(id(extractor))
+                crop = np.full((128, 64, 3), 115, dtype=np.uint8)
+                # CUDA first-use kernel initialization is shape-dependent even
+                # with convolution benchmarking disabled. Each extractor can
+                # receive any tail batch from 1 to its configured maximum.
+                # Initialize every possible shape before accepting arrivals;
+                # otherwise a new person count repeatedly stalls a cold run.
+                batch_sizes = list(range(1, extractor.batch_size + 1))
+                for batch_size in batch_sizes:
+                    extractor.extract_batch([crop] * batch_size)
+                warmed_semantic_batches.append(batch_sizes)
+        torch.cuda.synchronize()
+        warmup_report["vision_and_semantics_seconds"] = time.perf_counter() - vision_started
+        warmup_report["track_state_updated"] = False
+        warmup_report["semantic_batch_sizes"] = warmed_semantic_batches
+        predictor.records = 0
+        predictor.last_record = None
+        predictor.fp32_retry_count = 0
+        torch.cuda.reset_peak_memory_stats()
     model_load_seconds = time.perf_counter() - load_started
     video_raw = output / "annotated-raw.mp4"
     video_width = source.frame_width + (max(420, min(560, source.frame_width // 3)) if mode != "foul_only" else 0)
@@ -422,6 +528,9 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
     short_gap_missing_track_frames = observed_active_track_frames = 0
     held_event, hold_until = None, -1
     started = time.perf_counter()
+    replay = bool(getattr(args, "causal_replay", False))
+    if causal and replay:
+        detector.wall_clock_origin = started
     print(json.dumps({"status": "started", "input": input_path.name, "mode": mode, "device": "cuda", "gpu": torch.cuda.get_device_name(), "expected_frames": meta["reference_decoded_frames"]}), flush=True)
     try:
         while True:
@@ -430,6 +539,12 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
                 break
             if predictor:
                 predictor.frame_id = source.frame_count
+            if causal:
+                detector.source_pts_s = meta["decoded_timestamps_ms"][source.frame_count - 1] / 1000
+            if replay:
+                arrival_due = started + meta["decoded_timestamps_ms"][source.frame_count - 1] / 1000
+                if arrival_due > time.perf_counter():
+                    time.sleep(arrival_due - time.perf_counter())
             torch.cuda.synchronize()
             frame_start = time.perf_counter()
             state = pipeline._process_frame(packet.image, packet.capture_unix_us / 1000.0, packet)
@@ -475,7 +590,8 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
             for event in state.events:
                 if event.event_type == "foul_candidate":
                     candidate_count += 1
-                    line_json(events_log, {"media_pts_seconds": meta["decoded_timestamps_ms"][frames - 1] / 1000, "source_frame_id": state.frame_id, "event": event.model_dump(mode="json")})
+                    media_time = event.evidence.get("event_time_s", meta["decoded_timestamps_ms"][frames - 1] / 1000)
+                    line_json(events_log, {"media_pts_seconds": media_time, "source_frame_id": state.frame_id, "event": event.model_dump(mode="json")})
             line_json(frames_log, state.model_dump(mode="json"))
             line_json(timings_log, {"frame_id": state.frame_id, "source_pts_ms": meta["decoded_timestamps_ms"][frames - 1], "synchronized_pipeline_latency_ms": latency, "processed_timestamp_ms": state.processed_timestamp_ms, "read_to_processed_ms": state.processed_timestamp_ms - state.capture_timestamp_ms, "homography_status": state.homography_status.value, "projection_quality": state.projection_quality, "geometry_epoch": state.geometry_epoch, "tracked_persons": len(state.players), "short_gap_missing_tracks": short_gaps})
             final, held_event, hold_until = render(captured["frame"], state, mode, predictor.last_record if predictor else None, held_event, hold_until, pitch_config)
@@ -492,7 +608,7 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         for handle in (log, frames_log, timings_log, events_log):
             handle.close()
     assert frames == source.frame_count == meta["reference_decoded_frames"] and frames > 0
-    expected_windows = 0 if mode == "projection_only" else 1 + (frames - 24) // 8 if frames >= 24 else 0
+    expected_windows = detector.inference_count if causal else 0 if mode == "projection_only" else 1 + (frames - 24) // 8 if frames >= 24 else 0
     assert (predictor.records if predictor else 0) == expected_windows
     if mode == "foul_only":
         assert pipeline._vision_core.pitch_detection_count == 0 and projected == 0
@@ -521,10 +637,12 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         geometry_epoch_changes = sum(a["geometry_epoch"] != b["geometry_epoch"]
                                      for a, b in zip(refined.frame_states, refined.frame_states[1:]))
         elapsed = time.perf_counter() - started
+    if causal:
+        write_json(output / "interaction-episodes.json", [ep.as_dict() for ep in detector.interactions.episodes.values()])
     summary = {
         "status": "complete", "input": input_path.name, "mode": mode,
         "started_at": job_started_at, "completed_at": datetime.now(timezone.utc).isoformat(),
-        "source_code": json.loads((ROOT / "source-manifest.json").read_text()) if (ROOT / "source-manifest.json").exists() else {"root": str(ROOT)},
+        "source_code": source_snapshot,
         "environment": {"hostname": subprocess.check_output(["hostname"], text=True).strip(), "gpu": torch.cuda.get_device_name(), "device": "cuda", "python": sys.version, "torch": torch.__version__, "cuda_runtime": torch.version.cuda, "opencv": cv2.__version__},
         "source": {key: value for key, value in meta.items() if key != "decoded_timestamps_ms"},
         "config": {"pitch_profile_id": pitch_profile_id, "paint_enabled": core.enable_paint_projection, "pitch_geometry_m": {
@@ -536,8 +654,8 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
             "center_circle_radius_m": pitch_config.centre_circle_radius / 100.0,
             "penalty_spot_distance_m": pitch_config.penalty_spot_distance / 100.0,
             "goal_width_m": 7.32}, "pitch_enabled": mode != "foul_only", "foul_enabled": mode != "projection_only", "undistortion_enabled": False, "imgsz": 640, "pitch_interval": 5, "foul_window": 24, "foul_stride": 8, "foul_tensor_frames": 16, "foul_replicated_single_view_slots": 4, "foul_confidence_threshold": args.threshold, "foul_cooldown_frames": 25},
-        "models": {name: {"path": path, "sha256": sha256(Path(path))} for name, path in (("player", args.player_model), ("pitch", args.pitch_model), ("foul", args.foul_model))},
-        "bundle": {"path": args.bundle, "sha256": sha256(Path(args.bundle)), "match_id": bundle.match_id, "validation": asdict(bundle.validation_report), "prototypes": [f"{team.value}/{role.value}" for team, role in bundle.prototypes]},
+        "models": asset_snapshot,
+        "bundle": {"path": args.bundle, "sha256": bundle_sha256, "match_id": bundle.match_id, "validation": asdict(bundle.validation_report), "prototypes": [f"{team.value}/{role.value}" for team, role in bundle.prototypes]},
         "checkpoint_validation": predictor.load_state_result if predictor else None,
         "decoded_frames": source.frame_count, "processed_frames": frames, "output_frames": frames,
         "dropped_frame_count": meta["reference_decoded_frames"] - frames, "dropped_frame_rate": (meta["reference_decoded_frames"] - frames) / meta["reference_decoded_frames"],
@@ -570,6 +688,39 @@ def run_job(args, input_path: Path, mode: str, output: Path) -> dict:
         "gpu_peak_allocated_bytes": torch.cuda.max_memory_allocated(), "gpu_peak_reserved_bytes": torch.cuda.max_memory_reserved(),
         "limitations": ["Offline sequential throughput includes JSON/video rendering; it is not real-time stream-drop acceptance.", "Unknown and tracker switch values are algorithm outputs, not manually annotated precision/ID-switch ground truth.", "Match-specific kit calibration was reused unchanged across all four clips; independent-video semantics are not proven by bundle leave-one-track-out validation.", "A single source view is replicated into four VARS slots; these are not four independent camera views.", "Candidates and severity classes are model evidence for human review, not final referee decisions."],
     }
+    summary["config"].update(
+        detection_profile=foul_profile,
+        model_id=predictor.model_id if causal else "mvit-v2-s-vars" if predictor else None,
+    )
+    summary["model_id"] = summary["config"]["model_id"]
+    summary["causal_replay"] = {"enabled": replay, "source_fps": source.fps,
+                                "scheduling": "source PTS; sequential arrivals; no drops" if replay else None}
+    summary["warmup"] = warmup_report
+    summary["config"]["cudnn_benchmark"] = torch.backends.cudnn.benchmark
+    if causal:
+        summary["config_sha256"] = hashlib.sha256(json.dumps(
+            detector.configuration(), sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        summary["external_source_sha256"] = getattr(predictor, "source_sha256", None)
+        summary["config"].update(
+            verification=detector.configuration(), foul_window_seconds=predictor.temporal_duration_s,
+            foul_tensor_frames=predictor.temporal_frames, foul_target_fps=predictor.temporal_fps,
+            foul_window=None, foul_stride=None,
+            foul_stride_seconds=detector.config.stride_s, foul_cooldown_frames=None,
+            official_preprocessing=True,
+            foul_replicated_single_view_slots=1 if foul_profile.startswith("multidim") else 4,
+        )
+        summary["interaction_candidates"] = detector.interactions.stats["episodes"]
+        summary["foul_skip_reason"] = "no_interaction_candidates" if not summary["interaction_candidates"] else None
+        if foul_profile == "mvit-contact-v3":
+            summary["contact_supported_candidates"] = detector.stats.get("contact_supported_candidates", 0)
+            if not detector.records and not summary["contact_supported_candidates"]:
+                summary["foul_skip_reason"] = "no_supported_contacts"
+        summary["interaction_mechanism"] = {**detector.stats, **detector.interactions.stats}
+        summary["model_latency_ms"] = {
+            "mean": float(np.mean([r.get("synchronized_latency_ms", 0) for r in detector.records])) if detector.records else None,
+            "p95": float(np.percentile([r.get("synchronized_latency_ms", 0) for r in detector.records], 95)) if detector.records else None,
+        }
+        summary["limitations"].append("Versioned causal profiles are experimental until event/action/latency acceptance passes; no cross-match accuracy is established.")
     final_video = output / "annotated.mp4"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(video_raw), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(final_video)], check=True)
     cap = cv2.VideoCapture(str(final_video))
@@ -614,7 +765,16 @@ def main() -> int:
     parser.add_argument("--pitch-model", required=True)
     parser.add_argument("--foul-model", required=True)
     parser.add_argument("--foul-code", default=os.environ.get("SC_MVFOUL_CODE_PATH", str(ROOT / "third_party" / "sn-mvfoul" / "VARS model")))
-    parser.add_argument("--threshold", type=float, default=0.48)
+    parser.add_argument("--threshold", type=float)
+    parser.add_argument("--foul-profile", choices=PROFILE_IDS, default="legacy-v1")
+    parser.add_argument("--action-threshold", type=float)
+    parser.add_argument("--confirmation-windows", type=int)
+    parser.add_argument("--evidence-threshold", type=float)
+    parser.add_argument("--post-contact-s", type=float)
+    parser.add_argument("--max-windows-per-tick", type=int, default=2)
+    parser.add_argument("--multidim-model")
+    parser.add_argument("--multidim-code")
+    parser.add_argument("--causal-replay", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--pitch-profile", choices=PITCH_PROFILE_IDS, default="legacy")
     args = parser.parse_args()

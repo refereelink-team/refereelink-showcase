@@ -1,5 +1,6 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
+import asyncio
 from pathlib import Path
 import socket
 import httpx
@@ -13,12 +14,14 @@ from .gateway import create_gateway
 from .jobs import JobManager
 from .settings import Settings
 from .tracking import TrackingRepository, create_tracking_router
+from .foul_presentation import FoulPresentationRepository, create_foul_presentation_router
 
 
 class JobRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
     kind: str
     case_id: str
+    detection_profile: str | None = None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -42,6 +45,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         manager.start()
         calibration.start()
         try:
+            await asyncio.to_thread(manager.prepare_foul_clips,
+                                    cuda_verified=gpu['cuda_available'])
             yield
         finally:
             calibration.request_stop()
@@ -58,6 +63,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(create_calibration_router(calibration))
     app.state.tracking = TrackingRepository(catalog, manager)
     app.include_router(create_tracking_router(app.state.tracking))
+    app.state.foul_presentation = FoulPresentationRepository(catalog, manager)
+    app.include_router(create_foul_presentation_router(app.state.foul_presentation))
     app.include_router(create_gateway(client, settings.upstream))
     try:
         from .telemetry import TelemetryService
@@ -82,7 +89,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except (httpx.HTTPError, ValueError, KeyError):
             warning = '现场多视角服务暂不可用；已准备的视频仍可展示。'
         return {'cases': cases, 'clips': catalog.clips(), 'backend': gpu,
-                'upstream_warning': warning}
+                'upstream_warning': warning, 'foul_detection': manager.foul_configuration()}
+
+    @app.get('/api/foul/preparation')
+    def foul_preparation():
+        return manager.foul_preparation(app.state.foul_presentation)
 
     @app.get('/media/{path:path}')
     def media(path: str):
@@ -93,7 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post('/api/experiments/jobs', status_code=202)
     def create_job(payload: JobRequest):
-        return manager.submit(payload.kind, payload.case_id)
+        return manager.submit(payload.kind, payload.case_id, payload.detection_profile)
 
     @app.get('/api/experiments/jobs')
     def list_jobs():

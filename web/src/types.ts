@@ -1,10 +1,41 @@
 import type { MultiviewCase } from './types/multiview';
+export type DetectionProfile =
+  'legacy-v1' | 'mvit-full-v2' | 'mvit-pair-v2' | 'multidim-full-v2' | 'mvit-contact-v3';
+export interface DetectorFingerprint {
+  config_sha256: string;
+  model_sha256: string;
+  core_manifest_sha256: string;
+  external_source_sha256: string;
+}
+export interface FoulQualification extends DetectorFingerprint {
+  detection_profile: 'mvit-contact-v3';
+  status: 'passed';
+  scope: 'development_clip';
+  evidence_sha256: string;
+  verified_at: string;
+}
+export interface FoulConfiguration {
+  default_profile: DetectionProfile;
+  qualification?: FoulQualification | null;
+  profiles: {
+    id: DetectionProfile;
+    label: string;
+    model_id: string;
+    available: boolean;
+    experimental: boolean;
+    qualification_scope?: 'development_clip' | null;
+  }[];
+}
 export interface Artifact {
   id: string;
   kind: string;
   mode?: string;
   label: string;
   url?: string;
+  detection_profile?: DetectionProfile;
+  model_id?: string;
+  qualification?: FoulQualification;
+  detector_fingerprint?: DetectorFingerprint;
 }
 export interface Clip {
   id: string;
@@ -19,6 +50,7 @@ export interface Catalog {
   cases: MultiviewCase[];
   clips: Clip[];
   backend?: { device: string; host?: string };
+  foul_detection?: FoulConfiguration;
 }
 export interface Job {
   id: string;
@@ -29,6 +61,10 @@ export interface Job {
   error?: string | null;
   artifacts: Artifact[];
   summary?: Record<string, unknown> | null;
+  detection_profile?: DetectionProfile;
+  model_id?: string;
+  qualification?: FoulQualification;
+  detector_fingerprint?: DetectorFingerprint;
 }
 export interface Anchor {
   id: string;

@@ -1,6 +1,5 @@
 // Synchronization and attention rendering adapted from RefereeLink's MIT-licensed review page.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import type {
   EvidenceView,
   LocalizationBox,
@@ -683,17 +682,6 @@ export default function SynchronizedEvidencePlayer({
         <span className="se-time" title="共同播放时间">
           {time.toFixed(2)} <em>/</em> {duration.toFixed(2)} s
         </span>
-        <input
-          aria-label="多机位共享时间轴"
-          style={{ '--se-progress': `${timelinePercent(time, duration)}%` } as CSSProperties}
-          type="range"
-          min="0"
-          max={duration || 1}
-          step="0.01"
-          value={Math.min(time, duration || 1)}
-          disabled={!canPlay}
-          onChange={(event) => seek(Number(event.target.value))}
-        />
         <select
           aria-label="全部机位播放速度"
           value={rate}
@@ -721,119 +709,145 @@ export default function SynchronizedEvidencePlayer({
           {controlError}
         </p>
       )}
-      <div className="se-timelines" aria-label="各机位证据时间轴">
-        {caseData.videos.map((view, index) => {
-          const box = decision?.localization[view.camera_id];
-          const window = box ? localizationWindow(box) : null;
-          const range = !errors[view.camera_id]
-            ? viewRange(view, durations[view.camera_id] ?? 0)
-            : null;
-          const start = window ? commonTime(window.startS, view) : 0;
-          const end = window ? commonTime(window.endS, view) : 0;
-          const peak = window ? commonTime(window.peakS, view) : 0;
-          const windowVisible = window && range && end >= range.startS && start <= range.endS;
-          const windowStart = timelinePercent(Math.max(start, range?.startS ?? 0), duration);
-          const windowEnd = timelinePercent(Math.min(end, range?.endS ?? duration), duration);
-          return (
-            <div className="se-timeline-row" key={view.camera_id}>
-              <span className="se-track-label" title={view.display_name}>
-                机位 {index + 1}
-              </span>
-              <div
-                className="se-timeline-track"
-                role="slider"
-                tabIndex={canPlay ? 0 : -1}
-                aria-label={`机位 ${index + 1} 同期时间轴`}
-                aria-valuemin={0}
-                aria-valuemax={duration}
-                aria-valuenow={Math.min(time, duration)}
-                aria-disabled={!canPlay}
-                onPointerDown={(event) => {
-                  if (!canPlay) return;
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  seek(clamp((event.clientX - rect.left) / rect.width, 0, 1) * duration);
-                }}
-                onPointerMove={(event) => {
-                  if (!canPlay || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  seek(clamp((event.clientX - rect.left) / rect.width, 0, 1) * duration);
-                }}
-                onKeyDown={(event) => {
-                  if (!canPlay) return;
-                  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                    event.preventDefault();
-                    step(event.key === 'ArrowLeft' ? -1 : 1);
-                  } else if (event.key === 'Home' || event.key === 'End') {
-                    event.preventDefault();
-                    seek(event.key === 'Home' ? 0 : duration);
-                  }
-                }}
-              >
-                {range && (
+      <section className="timeline-panel se-timeline-panel" aria-label="证据时间线">
+        <div className="section-line">
+          <h2>证据时间线</h2>
+        </div>
+        <div className="event-timeline se-shared-timeline">
+          <div className="timeline-track" aria-hidden="true" />
+          <input
+            className="se-shared-seek"
+            aria-label="多机位共享时间轴"
+            aria-valuetext={`${time.toFixed(2)} 秒，共 ${duration.toFixed(2)} 秒`}
+            type="range"
+            min="0"
+            max={duration || 1}
+            step="0.01"
+            value={Math.min(time, duration || 1)}
+            disabled={!canPlay}
+            onChange={(event) => seek(Number(event.target.value))}
+          />
+          <div className="timeline-ticks" aria-hidden="true">
+            {[0, 0.25, 0.5, 0.75, 1].map((fraction) => (
+              <span key={fraction}>{(fraction * duration).toFixed(1)}s</span>
+            ))}
+          </div>
+        </div>
+        <div className="se-timelines" aria-label="各机位证据时间轴">
+          {caseData.videos.map((view, index) => {
+            const box = decision?.localization[view.camera_id];
+            const window = box ? localizationWindow(box) : null;
+            const range = !errors[view.camera_id]
+              ? viewRange(view, durations[view.camera_id] ?? 0)
+              : null;
+            const start = window ? commonTime(window.startS, view) : 0;
+            const end = window ? commonTime(window.endS, view) : 0;
+            const peak = window ? commonTime(window.peakS, view) : 0;
+            const windowVisible = window && range && end >= range.startS && start <= range.endS;
+            const windowStart = timelinePercent(Math.max(start, range?.startS ?? 0), duration);
+            const windowEnd = timelinePercent(Math.min(end, range?.endS ?? duration), duration);
+            return (
+              <div className="se-timeline-row" key={view.camera_id}>
+                <span className="se-track-label" title={view.display_name}>
+                  机位 {index + 1}
+                </span>
+                <div
+                  className="se-timeline-track"
+                  role="slider"
+                  tabIndex={canPlay ? 0 : -1}
+                  aria-label={`机位 ${index + 1} 同期时间轴`}
+                  aria-valuemin={0}
+                  aria-valuemax={duration}
+                  aria-valuenow={Math.min(time, duration)}
+                  aria-valuetext={`${time.toFixed(2)} 秒，共 ${duration.toFixed(2)} 秒`}
+                  aria-disabled={!canPlay}
+                  onPointerDown={(event) => {
+                    if (!canPlay) return;
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    seek(clamp((event.clientX - rect.left) / rect.width, 0, 1) * duration);
+                  }}
+                  onPointerMove={(event) => {
+                    if (!canPlay || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    seek(clamp((event.clientX - rect.left) / rect.width, 0, 1) * duration);
+                  }}
+                  onKeyDown={(event) => {
+                    if (!canPlay) return;
+                    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                      event.preventDefault();
+                      step(event.key === 'ArrowLeft' ? -1 : 1);
+                    } else if (event.key === 'Home' || event.key === 'End') {
+                      event.preventDefault();
+                      seek(event.key === 'Home' ? 0 : duration);
+                    }
+                  }}
+                >
+                  {range && (
+                    <span
+                      className="se-media-range"
+                      style={{
+                        left: `${timelinePercent(range.startS, duration)}%`,
+                        width: `${Math.max(0, timelinePercent(range.endS, duration) - timelinePercent(range.startS, duration))}%`,
+                      }}
+                    />
+                  )}
+                  {windowVisible && (
+                    <span
+                      className={`se-temporal-window ${window.source} ${box ? localizationTier(box) : ''}`}
+                      style={{
+                        left: `${windowStart}%`,
+                        width: `${Math.max(0.3, windowEnd - windowStart)}%`,
+                      }}
+                      title={`${window.source === 'gradcam' ? 'Temporal Saliency' : 'Focus Window'} · ${start.toFixed(2)}–${end.toFixed(2)} s`}
+                    />
+                  )}
+                  {windowVisible && peak >= (range?.startS ?? 0) && peak <= (range?.endS ?? 0) && (
+                    <span
+                      className="se-temporal-peak"
+                      style={{ left: `${timelinePercent(peak, duration)}%` }}
+                      title={`Focus Peak · ${peak.toFixed(2)} s`}
+                    />
+                  )}
                   <span
-                    className="se-media-range"
-                    style={{
-                      left: `${timelinePercent(range.startS, duration)}%`,
-                      width: `${Math.max(0, timelinePercent(range.endS, duration) - timelinePercent(range.startS, duration))}%`,
-                    }}
+                    className="se-playhead"
+                    style={{ left: `${timelinePercent(time, duration)}%` }}
                   />
-                )}
-                {windowVisible && (
-                  <span
-                    className={`se-temporal-window ${window.source} ${box ? localizationTier(box) : ''}`}
-                    style={{
-                      left: `${windowStart}%`,
-                      width: `${Math.max(0.3, windowEnd - windowStart)}%`,
-                    }}
-                    title={`${window.source === 'gradcam' ? 'Temporal Saliency' : 'Focus Window'} · ${start.toFixed(2)}–${end.toFixed(2)} s`}
-                  />
-                )}
-                {windowVisible && peak >= (range?.startS ?? 0) && peak <= (range?.endS ?? 0) && (
-                  <span
-                    className="se-temporal-peak"
-                    style={{ left: `${timelinePercent(peak, duration)}%` }}
-                    title={`Focus Peak · ${peak.toFixed(2)} s`}
-                  />
-                )}
-                <span
-                  className="se-playhead"
-                  style={{ left: `${timelinePercent(time, duration)}%` }}
-                />
+                </div>
+                <span className="se-track-time">
+                  {ready[view.camera_id] && !errors[view.camera_id]
+                    ? `${mediaPosition(time, view, durations[view.camera_id] ?? 0).timeS.toFixed(2)} / ${(durations[view.camera_id] ?? 0).toFixed(2)} s`
+                    : errors[view.camera_id]
+                      ? '读取失败'
+                      : !view.media_url || view.media_kind !== 'video'
+                        ? '缺少视频'
+                        : '加载中'}
+                </span>
               </div>
-              <span className="se-track-time">
-                {ready[view.camera_id] && !errors[view.camera_id]
-                  ? `${mediaPosition(time, view, durations[view.camera_id] ?? 0).timeS.toFixed(2)} / ${(durations[view.camera_id] ?? 0).toFixed(2)} s`
-                  : errors[view.camera_id]
-                    ? '读取失败'
-                    : !view.media_url || view.media_kind !== 'video'
-                      ? '缺少视频'
-                      : '加载中'}
+            );
+          })}
+        </div>
+        <div className="se-timeline-legend">
+          <span>
+            <i className="se-legend-range" />
+            Evidence Range
+          </span>
+          {decision &&
+            (caseData.videos.some((view) => {
+              const box = decision.localization[view.camera_id];
+              return box && localizationWindow(box) !== null;
+            }) ? (
+              <span>
+                <i className="se-legend-focus" />
+                Focus Window
               </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="se-timeline-legend">
-        <span>
-          <i className="se-legend-range" />
-          Evidence Range
-        </span>
-        {decision &&
-          (caseData.videos.some((view) => {
-            const box = decision.localization[view.camera_id];
-            return box && localizationWindow(box) !== null;
-          }) ? (
-            <span>
-              <i className="se-legend-focus" />
-              Focus Window
-            </span>
-          ) : (
-            <span title="No reliable model-derived temporal focus is available">
-              Temporal Unavailable
-            </span>
-          ))}
-      </div>
+            ) : (
+              <span title="No reliable model-derived temporal focus is available">
+                Temporal Unavailable
+              </span>
+            ))}
+        </div>
+      </section>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from './api';
-import type { Job, TelemetrySnapshot } from './types';
+import type { DetectionProfile, Job, TelemetrySnapshot } from './types';
+import { ExperimentRequestScope, type ExperimentTicket } from './experimentRequestScope';
 export function useResource<T>(loader: () => Promise<T>, interval = 0) {
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState<string | null>(null),
@@ -50,21 +51,24 @@ export function useAction() {
   };
   return { busy, error, run, setError };
 }
-export function useJob() {
+export function useJob(scope = '') {
   const [job, setJob] = useState<Job | null>(null),
     action = useAction();
+  const requestScope = useRef(new ExperimentRequestScope());
+  requestScope.current.activate(scope);
   useEffect(() => {
     if (!job || ['completed', 'succeeded', 'failed', 'error', 'cancelled'].includes(job.status))
       return;
     let active = true;
+    const ticket = requestScope.current.ticket();
     const timer = setInterval(() => {
       api
         .job(job.id)
         .then((v) => {
-          if (active) setJob(v);
+          if (active && requestScope.current.current(ticket)) setJob(v);
         })
         .catch((e) => {
-          if (active) action.setError(e.message);
+          if (active && requestScope.current.current(ticket)) action.setError(e.message);
         });
     }, 1500);
     return () => {
@@ -72,11 +76,23 @@ export function useJob() {
       clearInterval(timer);
     };
   }, [job?.id, job?.status]);
-  const start = async (kind: 'tracking' | 'foul', id: string) => {
-    const value = await action.run(() => api.createJob(kind, id));
-    if (value) setJob(value);
+  const start = async (kind: 'tracking' | 'foul', id: string, profile?: DetectionProfile) => {
+    const ticket = requestScope.current.submitted();
+    const value = await action.run(() => api.createJob(kind, id, profile));
+    if (value && requestScope.current.current(ticket)) setJob(value);
   };
-  return { job, start, busy: action.busy, error: action.error, setJob };
+  const hydrateJob = (value: Job, ticket: ExperimentTicket) => {
+    if (requestScope.current.current(ticket)) setJob(value);
+  };
+  return {
+    job,
+    start,
+    busy: action.busy,
+    error: action.error,
+    setJob,
+    hydrateJob,
+    hydrationTicket: () => requestScope.current.ticket(),
+  };
 }
 export function useTelemetry() {
   const resource = useResource(api.telemetry, 4000);

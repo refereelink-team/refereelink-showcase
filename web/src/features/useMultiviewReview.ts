@@ -278,7 +278,6 @@ export function useMultiviewReview(caseId: string) {
       });
       setNewModelFields(seeded.changedFields);
       setPrefillToken(result.decision.analysis_id);
-      setNotice(seeded.changedFields.length ? 'AI 建议已更新' : '分析完成，人工填写已保留');
       return result.decision;
     } catch (error) {
       if (scope.current.current(ticket)) setError(message(error));

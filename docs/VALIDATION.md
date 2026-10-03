@@ -98,3 +98,35 @@ the same shot, so it does not establish live throughput. Runtime assets and the
 protected demonstration bundle were preserved. Current browser visual acceptance
 was denied by computer-use permission; algorithm comparison images and API
 read-back must not be presented as browser screenshots.
+
+## Native foul detection and replay update — 2026-10-03
+
+The versioned foul detector and native presentation passed the full remote CUDA
+host suite: 379 Python tests, with no skips and ten dependency deprecation/future
+warnings. The CI Ruff selection for server and tests passed. After a test-only
+formatting correction, all 77 native foul adapter tests passed again. All 66
+extracted Python files matched the source manifest. The Mac frontend passed 126
+tests, TypeScript, formatting, and the production build.
+
+The current backend boot prepared fresh qualified Contact V3 results for both
+private foul clips. The development clip completed all 175 decoded frames with
+one Tackle candidate; the comparison clip completed all 189 decoded frames with
+no candidates. These observations do not establish cross-match accuracy or prove
+that every unlabelled interval contains no foul. Private qualification records,
+evaluation annotations, checkpoints, videos, and full run outputs remain outside
+Git.
+
+Desktop Chrome acceptance verified original-video playback, a native SVG contact
+rectangle at its recorded contact frame, hiding/restoring that rectangle without
+changing the video, event seeking, and notification-time gating. Looping playback
+cleared the right-hand event and timeline before revealing the next cycle's
+notifications. No framework error overlay or application console error appeared.
+The deployed frontend assets and source files matched the verified local build.
+
+The running status describes the demonstration presentation. Inference happens
+during backend startup; browser playback and each loop reuse those prepared
+results. Contact markers visualize recorded contact evidence independently of
+later notification timing. This acceptance does not measure fresh live-camera
+inference, per-loop inference, physical input reliability, or a new mobile-layout
+pass. Hosted CI verifies software contracts separately from real CUDA model
+evaluation and browser acceptance.

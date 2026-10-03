@@ -51,7 +51,6 @@ export default function App() {
         <a className="brand" href="#/multiview">
           RefereeLink
         </a>
-        <span className="brand-note">足球 · 视觉与运动感知</span>
         <div className="backend-status">
           <span className={`signal ${catalog.data && !catalog.error ? 'online' : ''}`}>
             {catalog.error ? '后台连接中' : catalog.loading ? '连接服务中' : '后台已连接'}

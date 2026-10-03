@@ -195,6 +195,19 @@ class FoulEventAdapter:
         if confidence < self.confidence_threshold:
             return None
         details = _prediction_details(prediction)
+        raw = getattr(prediction, "raw_scores", {})
+        temporal = raw.get("event_evidence") if isinstance(raw, dict) else None
+        evidence = {"source": "mvfoul"}
+        involved_ids = []
+        if isinstance(temporal, dict):
+            evidence.update(temporal)
+            involved_ids = [target["track_id"] for target in temporal.get("involved_targets", [])
+                            if isinstance(target, dict) and isinstance(target.get("track_id"), int)]
+            # An image interaction is not a ball coordinate or a referee verdict.
+            field_xy = None
+            timestamp = temporal["event_time_s"]
+            details.update({key: raw.get(key) for key in
+                            ("offence_score", "action_score", "severity_score")})
         return GameEvent(
             event_type="foul_candidate",
             confidence=confidence,
@@ -204,7 +217,8 @@ class FoulEventAdapter:
             field_x=field_xy[0] if field_xy else None,
             field_y=field_xy[1] if field_xy else None,
             foul_details=details,
-            evidence={"source": "mvfoul"},
+            evidence=evidence,
+            involved_track_ids=involved_ids,
         )
 
 
