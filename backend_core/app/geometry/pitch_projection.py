@@ -46,6 +46,10 @@ class PitchProjectionResult:
     homography: Optional[np.ndarray]
     homography_status: str
     reprojection_error: Optional[float]
+    fit_source: str = "model"
+    coordinate_transition: bool = False
+    projection_quality: Optional[dict] = None
+    geometry_epoch: Optional[int] = None
 
     @property
     def available(self) -> bool:
@@ -58,7 +62,9 @@ def build_pitch_point_references(
     return [
         PitchPointReference(
             index=index,
-            label=config.labels[index] if index < len(config.labels) else str(index + 1),
+            label=config.labels[index]
+            if index < len(config.labels)
+            else str(index + 1),
             world_xy=(
                 float(config.vertices[index][0]),
                 float(config.vertices[index][1]),
@@ -81,7 +87,11 @@ def translate_homography(
     """
 
     translation = np.array(
-        [[1.0, 0.0, -float(shift_xy[0])], [0.0, 1.0, -float(shift_xy[1])], [0.0, 0.0, 1.0]]
+        [
+            [1.0, 0.0, -float(shift_xy[0])],
+            [0.0, 1.0, -float(shift_xy[1])],
+            [0.0, 0.0, 1.0],
+        ]
     )
     return np.asarray(homography, dtype=np.float64) @ translation
 
@@ -182,8 +192,12 @@ class PitchProjectionEngine:
     ) -> None:
         self.config = config
         self.references = build_pitch_point_references(config)
-        self.reference_by_label = {reference.label: reference for reference in self.references}
-        self.references_by_index = {reference.index: reference for reference in self.references}
+        self.reference_by_label = {
+            reference.label: reference for reference in self.references
+        }
+        self.references_by_index = {
+            reference.index: reference for reference in self.references
+        }
         self.min_keypoint_confidence = min_keypoint_confidence
         self.max_reprojection_error_px = max_reprojection_error_px
         self.max_stale_frames = max(1, int(round(max(fps, 1.0) * MAX_STALE_SECONDS)))
@@ -204,7 +218,9 @@ class PitchProjectionEngine:
     ) -> PitchProjectionResult:
         observations = self._extract_model_observations(frame, keypoints)
 
-        homography, inlier_labels, reprojection_error = self._estimate_homography(observations)
+        homography, inlier_labels, reprojection_error = self._estimate_homography(
+            observations
+        )
 
         homography_status = "unavailable"
         projected_keypoints: List[ProjectedPitchKeypoint] = []
@@ -224,7 +240,10 @@ class PitchProjectionEngine:
                 homography,
                 [observations[label] for label in inlier_labels],
             )
-        elif self.prev_valid_homography is not None and self.stale_frames < self.max_stale_frames:
+        elif (
+            self.prev_valid_homography is not None
+            and self.stale_frames < self.max_stale_frames
+        ):
             homography = self.prev_valid_homography
             self.stale_frames += 1
             homography_status = "stale"
@@ -250,7 +269,10 @@ class PitchProjectionEngine:
         frames, so a fixed camera cannot silently keep an old calibration
         forever.
         """
-        if self.prev_valid_homography is None or self.stale_frames >= self.max_stale_frames:
+        if (
+            self.prev_valid_homography is None
+            or self.stale_frames >= self.max_stale_frames
+        ):
             self.prev_valid_homography = None
             self.stale_frames = 0
             return PitchProjectionResult(
@@ -348,7 +370,9 @@ class PitchProjectionEngine:
                 continue
 
             inlier_mask = (
-                np.ones(len(ordered), dtype=bool) if mask is None else mask.flatten().astype(bool)
+                np.ones(len(ordered), dtype=bool)
+                if mask is None
+                else mask.flatten().astype(bool)
             )
             if int(np.count_nonzero(inlier_mask)) < max(
                 MIN_KEYPOINTS_FOR_HOMOGRAPHY,
@@ -390,7 +414,9 @@ class PitchProjectionEngine:
             [observation.image_xy for observation in observations],
             dtype=np.float32,
         ).reshape(-1, 1, 2)
-        projected_points = cv2.perspectiveTransform(image_points, homography).reshape(-1, 2)
+        projected_points = cv2.perspectiveTransform(image_points, homography).reshape(
+            -1, 2
+        )
         return [
             ProjectedPitchKeypoint(
                 reference=observation.reference,
@@ -418,4 +444,6 @@ class PitchProjectionEngine:
     ) -> bool:
         height = int(frame_shape[0])
         width = int(frame_shape[1])
-        return margin <= point[0] < width - margin and margin <= point[1] < height - margin
+        return (
+            margin <= point[0] < width - margin and margin <= point[1] < height - margin
+        )

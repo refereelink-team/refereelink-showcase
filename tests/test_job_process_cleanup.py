@@ -111,3 +111,32 @@ def test_missing_queued_input_fails_persistently_and_worker_continues(tmp_path):
             assert persisted['finished_at'] >= persisted['started_at']
     finally:
         manager.stop()
+
+
+def test_refined_atomic_jsonl_replacement_does_not_double_count_progress(tmp_path):
+    from types import SimpleNamespace
+    import threading
+
+    states = tmp_path / 'frame-states.jsonl'
+    states.write_text('{}\n{}\n')
+    replacement = tmp_path / 'replacement.jsonl'
+    replacement.write_text('{"refined":true}\n' * 3)
+    observed = []
+    step = 0
+
+    def poll():
+        nonlocal step
+        step += 1
+        if step == 2:
+            replacement.replace(states)
+        return None if step <= 2 else 0
+
+    manager = JobManager.__new__(JobManager)
+    manager.settings = SimpleNamespace(job_timeout_s=10)
+    manager.catalog = SimpleNamespace(clip=lambda case_id: {'decoded_frames': 3})
+    manager.stopped = SimpleNamespace(wait=lambda seconds: False)
+    manager.lock = threading.RLock()
+    manager._save = lambda job: observed.append(job['processed_frames'])
+    job = {'case_id': 'fixture'}
+    assert manager._wait(SimpleNamespace(poll=poll, returncode=0), tmp_path, job) == 0
+    assert observed == [2, 3]

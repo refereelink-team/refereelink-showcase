@@ -4,6 +4,7 @@ import { api } from './api';
 import { useResource } from './hooks';
 import Multiview from './features/Multiview';
 import Experiments from './features/Experiments';
+import Tracking from './features/Tracking';
 import Telemetry from './features/Telemetry';
 import { Alert, Icon } from './components/UI';
 const tabs = [
@@ -93,6 +94,8 @@ export default function App() {
         )}
         {current === 'multiview' ? (
           <Multiview catalog={catalog.data} reload={catalog.refresh} />
+        ) : current === 'tracking' ? (
+          <Tracking catalog={catalog.data} />
         ) : current === 'telemetry' ? (
           <Telemetry />
         ) : (

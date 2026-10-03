@@ -1,0 +1,532 @@
+.cal-workspace {
+    min-width: 0;
+}
+.cal-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0 0 20px;
+    border-bottom: 1px solid var(--border);
+}
+.cal-steps button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 6px 16px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    color: #818a98;
+    font-size: 13px;
+    opacity: 1;
+}
+.cal-steps button > span {
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    border: 1px solid #dce1e8;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.cal-steps button.current {
+    color: var(--ink);
+    font-weight: 600;
+    box-shadow: inset 0 -2px #81b139;
+}
+.cal-steps button.current > span,
+.cal-steps button.done > span {
+    background: #edf5e2;
+    border-color: #dbe8ca;
+    color: #52772b;
+}
+.cal-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 20px;
+    align-items: start;
+}
+.cal-main {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+}
+.cal-video-card,
+.cal-inspector,
+.cal-track-browser,
+.cal-result {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    min-width: 0;
+}
+.cal-caption {
+    font-size: 12px;
+    color: var(--muted);
+}
+.cal-video-stage {
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    background: #10141b;
+}
+.cal-video-stage > video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.cal-box-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.cal-box {
+    cursor: pointer;
+    pointer-events: all;
+}
+.cal-box > rect:first-child {
+    fill: transparent;
+    stroke: currentColor;
+    stroke-width: 1.6;
+}
+.cal-box.selected > rect:first-child {
+    stroke-width: 3;
+}
+.cal-box:focus-visible > rect:first-child {
+    stroke: #fff;
+    stroke-width: 3;
+}
+.cal-box-tag {
+    fill: currentColor;
+}
+.cal-box text {
+    fill: #172231;
+    font-weight: 700;
+    pointer-events: none;
+}
+.cal-media-error {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    padding: 10px 14px;
+    background: #fff;
+    color: #a64343;
+    border-radius: 6px;
+    font-size: 12px;
+    pointer-events: none;
+}
+.cal-clip-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 18px;
+    font-size: 11px;
+    color: #7d8797;
+    font-variant-numeric: tabular-nums;
+}
+.cal-progress {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: #748093;
+}
+.cal-progress progress {
+    flex: 1;
+    accent-color: #89b83b;
+    height: 6px;
+}
+.cal-inspector-heading {
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 18px 14px;
+}
+.cal-inspector-heading h2 {
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+}
+.cal-inspector-heading span {
+    color: #7b8695;
+    font-size: 12px;
+}
+.cal-best-crop {
+    position: relative;
+    min-height: 174px;
+    display: grid;
+    place-items: center;
+    background: #f5f7f9;
+    margin: 0 18px;
+    border-radius: 7px;
+    overflow: hidden;
+}
+.cal-best-crop canvas {
+    display: block;
+    max-width: 100%;
+    height: 174px;
+    object-fit: contain;
+}
+.cal-crop-source {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.cal-best-crop > span {
+    position: absolute;
+    font-size: 11px;
+    color: var(--muted);
+}
+.cal-crop-note {
+    text-align: center;
+    color: #929aa7;
+    font-size: 11px;
+    margin: 8px 18px 12px;
+}
+.cal-quality {
+    display: grid;
+    gap: 7px;
+    margin: 0 18px 16px;
+    font-size: 12px;
+}
+.cal-quality div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+.cal-quality dt {
+    color: #7d8797;
+}
+.cal-quality dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+.cal-label-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 18px;
+}
+.cal-label-buttons button {
+    border: 1px solid #e0e5ec;
+    background: #fff;
+    border-radius: 7px;
+    padding: 11px 9px;
+    display: grid;
+    grid-template-columns: 6px 1fr;
+    gap: 3px 7px;
+    text-align: left;
+    min-height: 59px;
+}
+.cal-label-buttons button i {
+    background: var(--label-color);
+    height: 7px;
+    width: 7px;
+    border-radius: 50%;
+    margin-top: 5px;
+}
+.cal-label-buttons button strong {
+    font-weight: 600;
+    font-size: 13px;
+}
+.cal-label-buttons button span {
+    grid-column: 2;
+    font-size: 9px;
+    color: #8a93a2;
+    letter-spacing: 0.3px;
+}
+.cal-label-buttons button:hover:not(:disabled),
+.cal-label-buttons button.selected {
+    border-color: var(--label-color);
+    background: #f8faf6;
+}
+.cal-label-note {
+    font-size: 11px;
+    color: #8b94a2;
+    margin: 13px 18px 17px;
+    line-height: 1.7;
+}
+.cal-inspector-empty {
+    padding: 42px 23px 32px;
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 13px;
+    color: #9ca5b3;
+}
+.cal-inspector-empty h2 {
+    font-size: 15px;
+    color: #546174;
+}
+.cal-inspector-empty p {
+    font-size: 12px;
+    line-height: 1.8;
+    color: #8a94a3;
+}
+.cal-check-action {
+    border-top: 1px solid var(--border);
+    padding: 16px 18px;
+    display: grid;
+    gap: 8px;
+}
+.cal-check-action > span {
+    text-align: center;
+    font-size: 10px;
+    color: #929aa7;
+}
+.cal-browser-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 17px 18px 12px;
+}
+.cal-browser-heading h2 {
+    font-size: 14px;
+}
+.cal-browser-heading > span {
+    font-size: 11px;
+    color: #8490a0;
+}
+.cal-filters {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    padding: 0 14px 12px;
+}
+.cal-filters button {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 11px;
+    color: #7c8797;
+}
+.cal-filters button span {
+    font-size: 10px;
+    color: #939caa;
+    font-variant-numeric: tabular-nums;
+}
+.cal-filters button.selected {
+    background: #f0f5e9;
+    color: #4e6c32;
+    border-color: #dce7cf;
+}
+.cal-track-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+    padding: 0 14px 15px;
+    max-height: 310px;
+    overflow-y: auto;
+}
+.cal-track-list > button {
+    border: 1px solid #e7ebf0;
+    background: #fff;
+    padding: 10px;
+    border-radius: 6px;
+    display: grid;
+    grid-template-columns: 6px auto 1fr;
+    gap: 3px 8px;
+    align-items: center;
+    text-align: left;
+    min-width: 0;
+}
+.cal-track-list > button.selected {
+    border-color: #b4cf8b;
+    background: #f4f8ec;
+}
+.cal-track-list > button:hover {
+    border-color: #c3ccd9;
+}
+.cal-track-list i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+}
+.cal-track-list strong {
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.cal-track-list span {
+    justify-self: end;
+    color: #768295;
+    font-size: 10px;
+    white-space: nowrap;
+}
+.cal-track-list small {
+    grid-column: 2 / -1;
+    color: #98a1ad;
+    font-size: 10px;
+}
+.cal-list-empty {
+    padding: 20px 6px;
+    color: #8993a2;
+    font-size: 12px;
+    grid-column: 1 / -1;
+}
+.cal-auto-ignore {
+    padding: 10px 18px 14px;
+    border-top: 1px solid var(--border);
+    color: #929ba8;
+    font-size: 11px;
+    line-height: 1.8;
+}
+.cal-result {
+    padding: 18px;
+}
+.cal-result.passed {
+    border-color: #d5e4bf;
+}
+.cal-result-title {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+.cal-result-title h2 {
+    font-size: 16px;
+}
+.cal-result.passed .cal-result-title h2 {
+    color: #517329;
+}
+.cal-result > p {
+    margin-top: 8px;
+    color: #8590a0;
+    font-size: 12px;
+    line-height: 1.8;
+}
+.cal-result-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px 24px;
+    margin-top: 15px;
+    font-size: 11px;
+    color: #7e8999;
+}
+.cal-result-counts strong {
+    color: #334155;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 0 2px;
+}
+.cal-issue {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    padding-top: 13px;
+    margin-top: 13px;
+    border-top: 1px solid var(--border);
+}
+.cal-issue p {
+    font-size: 12px;
+    color: #79735f;
+    flex: 1;
+    min-width: 200px;
+}
+.cal-issue .text-button {
+    font-size: 11px;
+}
+.cal-issue-ids {
+    flex-basis: 100%;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.cal-issue-ids button {
+    font-size: 11px;
+    padding: 4px 8px;
+    border: 1px solid #e0e5ec;
+    background: #fff;
+    border-radius: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.cal-reset-prompt {
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    background: #fff;
+    border: 1px solid #e1d5bc;
+    border-radius: 8px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.cal-reset-prompt p {
+    flex: 1;
+    font-size: 12px;
+    color: #8b7447;
+}
+@media (max-width: 1050px) {
+    .cal-layout {
+        grid-template-columns: minmax(0, 1fr) 265px;
+        gap: 14px;
+    }
+    .cal-track-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 760px) {
+    .cal-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .cal-steps button {
+        gap: 6px;
+        font-size: 11px;
+        padding: 10px 3px 14px;
+    }
+    .cal-steps button > span {
+        width: 20px;
+        height: 20px;
+        flex-shrink: 0;
+        font-size: 10px;
+    }
+    .cal-clip-summary {
+        flex-wrap: wrap;
+    }
+    .cal-best-crop {
+        max-width: 300px;
+        margin: 0 auto;
+    }
+    .cal-label-buttons {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .cal-reset-prompt {
+        flex-wrap: wrap;
+    }
+    .cal-reset-prompt p {
+        flex-basis: 100%;
+    }
+    .cal-browser-heading {
+        flex-wrap: wrap;
+    }
+}
+@media (max-width: 430px) {
+    .cal-label-buttons {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .cal-track-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .cal-steps button {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
+.cal-result > .cal-role-report {
+    font-size: 11px;
+    color: #919aa8;
+    margin-top: 13px;
+}

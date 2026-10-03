@@ -8,7 +8,10 @@ CLIPS = (
     {'id': 'calibration', 'title': '赛前标定片段', 'filename': '标定用视频.mp4', 'decoded_frames': 579, 'duration_seconds': 19.313},
     {'id': 'foul-1', 'title': '实时犯规 · 片段一', 'filename': '实时犯规1.mp4', 'decoded_frames': 175, 'duration_seconds': 5.842},
     {'id': 'foul-2', 'title': '实时犯规 · 片段二', 'filename': '实时犯规2.mp4', 'decoded_frames': 189, 'duration_seconds': 6.331},
-    {'id': 'tracking-projection', 'title': '场地跟踪与投影', 'filename': '跟踪与投影.mp4', 'decoded_frames': 682, 'duration_seconds': 22.729},
+    {'id': 'tracking-projection', 'title': '场地跟踪与投影', 'filename': '跟踪与投影.mp4', 'decoded_frames': 682, 'duration_seconds': 22.729,
+     # Source-informed configuration; this is not a surveyed venue measurement.
+     'pitch_profile_id': 'source-informed105',
+     'profile_source_sha256': 'a15b2942f4c50cd6c41774ccae3923cd0327fb22d35626c1ddba6dd6c84fe534'},
 )
 
 

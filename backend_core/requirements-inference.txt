@@ -6,6 +6,7 @@ ultralytics==8.4.95
 supervision==0.29.1
 numpy==2.5.3
 opencv-python==5.0.0.93
+scipy==1.18.0
 pydantic==2.13.4
 psutil>=5.9
 

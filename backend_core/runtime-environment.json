@@ -12,7 +12,8 @@
     "numpy": "2.5.3",
     "opencv-python": "5.0.0.93",
     "pydantic": "2.13.4",
-    "pytest": "9.1.1"
+    "pytest": "9.1.1",
+    "scipy": "1.18.0"
   },
   "external_asset_sha256": {
     "mobilenet_v3_small-047dcff4.pth": "047dcff4addef86ea5bc2eff13c9614dc11f47ab1160d0a71a25e7db994f4e1f",

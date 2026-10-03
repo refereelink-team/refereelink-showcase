@@ -19,7 +19,6 @@ export interface MultiviewCase {
   match_name: string;
   match_clock: string;
   description: string;
-  event_time_s: number;
   review_state: ReviewState;
   risk_level: RiskLevel;
   zone: string;
@@ -103,6 +102,30 @@ export interface RuleAssessment {
   explanation_template: string;
 }
 
+export interface OutcomeResolution<T> {
+  status: 'resolved' | 'conditional' | 'unavailable';
+  value: T | null;
+}
+
+export interface ReviewScenario {
+  conditions: string[];
+  restart: RestartType;
+  sanction: SanctionType;
+  remaining_unknowns: string[];
+  rule_trace: RuleTraceEntry[];
+}
+
+export interface ReviewPreview {
+  assessment: RuleAssessment;
+  restart_resolution: OutcomeResolution<RestartType>;
+  sanction_resolution: OutcomeResolution<SanctionType>;
+  scenarios: ReviewScenario[];
+  required_facts: string[];
+  optional_facts: string[];
+  next_fact: string | null;
+  can_finalize: boolean;
+}
+
 export interface ReviewRecord {
   case_id: string;
   analysis_id: string | null;
@@ -125,6 +148,10 @@ export interface TemporalBin {
   score: number;
 }
 
+export interface SpatialBin extends TemporalBin {
+  rect: [number, number, number, number];
+}
+
 export interface LocalizationBox {
   rect: [number, number, number, number];
   score: number;
@@ -133,6 +160,8 @@ export interface LocalizationBox {
   active_end_s?: number | null;
   peak_s?: number | null;
   temporal_bins?: TemporalBin[];
+  spatial_bins?: SpatialBin[] | null;
+  // Preserve actual temporal provenance while the UI uses neutral review labels.
   temporal_source?: 'gradcam' | 'event_prior' | null;
   display_tier?: 'normal' | 'caution' | 'hidden';
   reliable?: boolean;
@@ -144,7 +173,7 @@ export interface MultiviewDecision {
   analysis_id: string;
   event_id: string;
   case_id: string;
-  timestamp: number;
+  timestamp: number | null;
   decision: string;
   decision_zh: string;
   action: string;

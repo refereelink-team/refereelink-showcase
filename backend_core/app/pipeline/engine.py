@@ -35,6 +35,7 @@ from app.state.models import (
     TeamLabel,
 )
 from app.state.store import StateStore
+from app.config.pitch import SoccerPitchConfiguration
 from app.vision.core import VisionCore
 from app.vision.display import TrackDisplaySmoother
 
@@ -254,6 +255,8 @@ class InferencePipeline:
         target_video_path: Optional[str] = None,
         frame_sink: Optional[Callable[[np.ndarray, FrameState], None]] = None,
         frame_observer: Optional[Callable[[np.ndarray, FrameState], None]] = None,
+        pitch_configuration: Optional[SoccerPitchConfiguration] = None,
+        enable_paint_projection: bool = False,
     ) -> None:
         self._source = source
         self._store = store
@@ -266,6 +269,8 @@ class InferencePipeline:
         self._calibration_alpha = calibration_alpha
         self._pitch_detection_interval = pitch_detection_interval
         self._enable_pitch = bool(enable_pitch)
+        self._pitch_configuration = pitch_configuration
+        self._enable_paint_projection = bool(enable_pitch and enable_paint_projection)
         self._imgsz = imgsz
         self._role_model_path = role_model_path
         self._team_classifier_path = team_classifier_path
@@ -388,6 +393,8 @@ class InferencePipeline:
             calibration_alpha=self._calibration_alpha,
             pitch_detection_interval=self._pitch_detection_interval,
             enable_pitch=self._enable_pitch,
+            pitch_configuration=self._pitch_configuration,
+            enable_paint_projection=self._enable_paint_projection,
             imgsz=self._imgsz,
             player_confidence=self._player_confidence,
             player_iou=self._player_iou,
@@ -677,6 +684,8 @@ class InferencePipeline:
             capture_timestamp_ms=capture_timestamp_ms,
             processing_fps=current_fps,
             homography_status=_map_homography_status(projection.homography_status),
+            projection_quality=getattr(projection, "projection_quality", None),
+            geometry_epoch=getattr(projection, "geometry_epoch", None),
             players=player_states,
             ball=ball_state,
             possession_track_id=self._find_possession_track_id(player_states, ball_state),

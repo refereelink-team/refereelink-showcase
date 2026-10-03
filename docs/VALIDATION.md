@@ -80,3 +80,21 @@ Snapshots are retained in the original backend's `assets/validation/20261002/sho
 At the recorded final read-back, both RTSP cameras and the phone were not receiving frames and had empty buffers. The host lacked the camera network address; both camera pings failed. Network repair required interactive administrator authentication that was unavailable, so no network configuration change occurred. The software's offline behavior passed, but restoring the network and phone capture is required before accepting three changing live streams, event capture and analysis.
 
 The UWB/IMU devices had not arrived. Radio positioning accuracy, real UART wiring, installation axes, target cross-compilation/linking, MCU flashing and simultaneous hardware/video timing remain unverified. Protocol implementation follows the primary [BP-TWR-30 manual](https://doc.51uwb.cn/user_manual/twr-30/twr-30/) and [Yahboom IMU-Sensor materials](https://www.yahboom.com/study/IMU_Sensor/); see [hardware/PROTOCOLS.md](hardware/PROTOCOLS.md). Three anchors provide same-plane 2D positioning. The displayed residual measures model consistency, not measured position error or altitude.
+
+## Field-marking stability update — 2026-10-03
+
+The source-bound field-registration release passed 156 remote Python tests with
+no skips, Ruff for changed inference/server/test files, and 103 Mac frontend
+tests plus types, formatting and production build. Production CUDA processing
+completed all 682 match frames at 8.21 offline FPS. Every native API frame matched
+the actual saved observations and source PTS, and all 60 core hashes matched the
+recorded manifest. A fresh legacy calibration run matched all 579 baseline
+homography statuses, player observations and ball records exactly.
+
+[PROJECTION_CORRECTIONS.md](PROJECTION_CORRECTIONS.md) records held-out paint-line
+errors, common-cohort speed comparisons, unsupported close-up coverage and
+remaining identity/detection noise. The final pass includes future evidence from
+the same shot, so it does not establish live throughput. Runtime assets and the
+protected demonstration bundle were preserved. Current browser visual acceptance
+was denied by computer-use permission; algorithm comparison images and API
+read-back must not be presented as browser screenshots.

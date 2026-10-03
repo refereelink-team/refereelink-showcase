@@ -13,8 +13,8 @@ The [software validation record](docs/VALIDATION.md) summarizes 12 real CUDA abl
 
 ## Four demonstration workflows
 
-1. **Multi-view refereeing:** switch between live inputs and prepared videos at the upper left. Video mode loads five prepared cases and their actual view media. Live mode reads the current ingest, preview, and buffer status of two RTSP cameras and a phone; event capture is available when the required inputs are online. CUDA analysis and human-review decisions are displayed separately. Missing input produces an offline state rather than an old frame presented as live.
-2. **Player tracking:** select a calibration or tracking clip. Play the completed tracking, HOME/AWAY classification, GK/REF labels, and 2D pitch projection in a single video, or submit a new independent tracking run on the remote CUDA host.
+1. **Multi-view refereeing:** switch between live inputs and prepared videos at the upper left. Video mode loads five prepared cases and their actual view media. Live mode reads the current ingest, preview, and buffer status of two RTSP cameras and a phone; event capture is available when the required inputs are online. Video review displays every camera together with one synchronized playback clock, per-view attention timelines, source-labeled Grad-CAM focus regions, pitch location editing, complete fact review, and revision-bound rule explanations. Cases are labeled only as Case 1, Case 2, and so on in the localized interface. New model suggestions receive a short, reduced-motion-aware highlight and remain unconfirmed until a reviewer accepts or edits them. CUDA analysis and human-review decisions are displayed separately. Missing input produces an offline state rather than an old frame presented as live. See [the multi-view review guide](docs/MULTIVIEW_REVIEW.md) for the workflow and migration validation.
+2. **Player tracking and calibration:** the calibration tab automatically prepares the entire supplied video for a fresh active session, exposes native clickable tracks, collects team and role labels, and validates an independent practice bundle. It reuses the real backend calibration pipeline on CUDA. Practice sessions never activate or overwrite the prepared demonstration bundle. The match tab renders the original video with native detection boxes and a synchronized interactive pitch; select a target to inspect its team, role, field position, and recorded trajectory, or start an independent CUDA run. Unknown or unavailable observations remain explicit. See [the calibration guide](docs/CALIBRATION.md) and [the native tracking guide](docs/NATIVE_TRACKING.md).
 3. **Foul detection:** use either of the two prepared foul clips to start remote CUDA analysis. The candidate timeline reads source-video PTS values from event NDJSON. Selecting a candidate seeks to its timestamp and displays its action, severity, and confidence. A model candidate is not a final referee decision.
 4. **Football positioning:** configure three anchor coordinates, a tag ID, and UWB/IMU serial ports. The page displays 2D positions and trajectories, with XYZ acceleration waveforms at the lower right. An explicit simulation mode is available before hardware arrives. Simulated UART frames use the same parsers and remain labeled `simulation` with `hardware_verified=false`.
 
@@ -73,6 +73,7 @@ runtime/media/prepared/<clip-id>/<mode>/...
 runtime/media/jobs/<job-id>/...
 runtime/media/artifacts.json
 runtime/state/job-<job-id>.json
+runtime/calibration-sessions/<session-id>/{session.json,bundle.npz,clips/}
 ```
 
 The four clip IDs correspond to the supplied calibration video, two foul clips, and the tracking/projection clip. Jobs accept only these allowlisted inputs. Their container frame-count metadata is unreliable; completion checks use the actual decoded counts of 579, 175, 189, and 682 frames, respectively.
@@ -86,10 +87,17 @@ The four clip IDs correspond to the supplied calibration video, two foul clips, 
 | POST `/api/experiments/jobs` | Submit `{kind: tracking / foul / combined, case_id}`; returns 202 |
 | GET `/api/experiments/jobs[/<id>]` | Persistent job state, frame-based progress, and result summaries |
 | GET `/api/experiments/artifacts/<id>` | Videos, reports, candidate NDJSON, and raw data |
+| GET `/api/tracking/cases/<id>` | Original media and latest complete source-verified CUDA tracking result |
+| POST `/api/tracking/cases/<id>/jobs` | Submit or deduplicate a native tracking CUDA job |
+| GET `/api/tracking/results/<id>[/frames]` | Source geometry and immutable revision-bound FrameState pages |
+| POST `/api/calibration/sessions` | Create an isolated practice session for the allowlisted calibration source |
+| GET `/api/calibration/sessions/<id>` | Persistent session status, labels, validation and revision |
+| POST `/api/calibration/sessions/<id>/{prepare,labels,validate,reset}` | Revision-bound practice operations, sharing the tracking CUDA lease |
+| GET `/api/calibration/sessions/<id>/{video,metadata}` | Clean review media and native track observations |
 | `/api/multiview/*` | Gateway to the corresponding original device-service APIs |
 | `/api/telemetry/*`, WS `/ws/telemetry` | Serial, position, and acceleration snapshots |
 
-The queue allows at most three waiting jobs, deduplicates active jobs for the same input/mode, and uses one sequential GPU worker. Progress comes from FrameState records already written to disk. Completion requires a genuine CUDA report, correct ablation flags, processing and output of every decoded frame, no processing-frame drops, and actual foul-model forwards when enabled. FFprobe then decodes the H.264 output to verify its frame count. A zero exit code alone is insufficient. On restart, unfinished jobs are persisted as failed; shutdown cleans up each complete subprocess group.
+The queue allows at most three waiting jobs, deduplicates active jobs for the same input/mode, and uses one sequential experiment worker. Calibration preparation, feature extraction and validation share the same GPU execution lease, preventing overlap with experiment subprocesses. Progress comes from FrameState records already written to disk. Completion requires a genuine CUDA report, correct ablation flags, processing and output of every decoded frame, no processing-frame drops, and actual foul-model forwards when enabled. FFprobe then decodes the H.264 output to verify its frame count. A zero exit code alone is insufficient. On restart, unfinished jobs are persisted as failed; shutdown cleans up each complete subprocess group.
 
 See [docs/VALIDATION.md](docs/VALIDATION.md) for software and browser evidence, and [docs/hardware/PROTOCOLS.md](docs/hardware/PROTOCOLS.md) for UART and positioning boundaries. STM32 protocol-bridge source is maintained separately in [refereelink-football](https://github.com/refereelink-team/refereelink-football).
 

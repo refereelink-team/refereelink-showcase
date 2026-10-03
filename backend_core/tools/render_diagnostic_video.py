@@ -58,7 +58,7 @@ def _draw_text(
     )
 
 
-def _render_panel(frame: np.ndarray, state: FrameState, panel_width: int) -> np.ndarray:
+def _render_panel(frame: np.ndarray, state: FrameState, panel_width: int, pitch_config: SoccerPitchConfiguration = PITCH_CONFIG) -> np.ndarray:
     """Append a compact pitch/radar and status panel to an annotated frame."""
 
     height = frame.shape[0]
@@ -96,12 +96,12 @@ def _render_panel(frame: np.ndarray, state: FrameState, panel_width: int) -> np.
     pitch_top = 160
     pitch_bottom = height - 28
     scale = min(
-        (panel_width - 2 * padding - 2) / PITCH_CONFIG.length,
-        (pitch_bottom - pitch_top - 2 * padding) / PITCH_CONFIG.width,
+        (panel_width - 2 * padding - 2) / pitch_config.length,
+        (pitch_bottom - pitch_top - 2 * padding) / pitch_config.width,
     )
     scale = max(scale, 0.01)
     pitch = draw_pitch(
-        PITCH_CONFIG,
+        pitch_config,
         padding=padding,
         scale=scale,
         line_thickness=max(1, int(round(scale * 35))),

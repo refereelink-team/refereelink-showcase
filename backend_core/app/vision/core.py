@@ -22,6 +22,7 @@ from app.constants.paths import (
 from app.geometry.camera import (
     CameraMotionEstimate,
     CameraMotionEstimator,
+    PaintCameraMotionEstimator,
     CameraUndistorter,
     build_undistorter,
 )
@@ -33,6 +34,8 @@ from app.geometry.pitch_projection import (
     translate_homography,
 )
 from app.geometry.position_filter import PlayerPositionFilter
+from app.geometry.pitch_lines import PaintLineProjection
+from app.geometry.pitch_registration import FieldLineRegistration
 from app.vision.entities import TrackEntityManager
 
 # Weight given to a newly fitted homography when the camera has not moved.
@@ -127,6 +130,8 @@ class VisionCore:
         entity_manager: Optional[TrackEntityManager] = None,
         stabilize_projection: bool = True,
         position_filter: Optional[PlayerPositionFilter] = None,
+        pitch_configuration: Optional[SoccerPitchConfiguration] = None,
+        enable_paint_projection: bool = False,
     ) -> None:
         self.device = device
         self.fps = max(float(fps), 1.0)
@@ -146,6 +151,7 @@ class VisionCore:
         self.track_lost_buffer = max(int(track_lost_buffer), 1)
         self.enable_player = enable_player
         self.enable_pitch = enable_pitch
+        self.enable_paint_projection = bool(enable_pitch and enable_paint_projection)
         self.person_only = person_only
         self.inference_backend = inference_backend
         self.camera_motion_refresh_count = 0
@@ -159,13 +165,17 @@ class VisionCore:
                 lost_track_buffer=self.track_lost_buffer,
                 minimum_matching_threshold=float(track_matching_threshold),
                 frame_rate=self.fps,
-                minimum_consecutive_frames=max(int(track_minimum_consecutive_frames), 1),
+                minimum_consecutive_frames=max(
+                    int(track_minimum_consecutive_frames), 1
+                ),
             )
         )
         self._projection_engine = (
             projection_engine
             if projection_engine is not None
-            else PitchProjectionEngine(config=SoccerPitchConfiguration(), fps=self.fps)
+            else PitchProjectionEngine(
+                config=pitch_configuration or SoccerPitchConfiguration(), fps=self.fps
+            )
         )
         self._last_pitch_detection_frame: Optional[int] = None
         self._use_fp16 = device.startswith("cuda") and torch.cuda.is_available()
@@ -199,8 +209,9 @@ class VisionCore:
             enabled=enable_undistortion,
             alpha=calibration_alpha,
         )
-        self._camera_motion_estimator = camera_motion_estimator or CameraMotionEstimator(
-            threshold_px=camera_motion_threshold_px
+        self._camera_motion_estimator = (
+            camera_motion_estimator
+            or CameraMotionEstimator(threshold_px=camera_motion_threshold_px)
         )
         # Temporal stabilisation of the pitch projection: homography blending,
         # sub-threshold camera-motion compensation and per-player filtering.
@@ -210,6 +221,31 @@ class VisionCore:
         self._last_output_homography: Optional[np.ndarray] = None
         self._consecutive_homography_rejects = 0
         self.homography_rejections = 0
+        # Paint uses an independent reference and filter; the legacy model
+        # fitting, refresh scheduling and filter continue as the control path.
+        self._paint_lines = (
+            PaintLineProjection(self._projection_engine.config)
+            if self.enable_paint_projection
+            else None
+        )
+        self._paint_motion = (
+            PaintCameraMotionEstimator() if self.enable_paint_projection else None
+        )
+        self._paint_filter = (
+            PlayerPositionFilter(fps=self.fps, strict_outliers=True)
+            if self.enable_paint_projection
+            else None
+        )
+        self._paint_registration = (
+            FieldLineRegistration(self._projection_engine.config, self.fps)
+            if self.enable_paint_projection
+            else None
+        )
+        self._paint_homography = None
+        self._paint_accepted_frame = -10000
+        self._paint_attempt_frame = -10000
+        self._paint_visible = False
+        self.paint_coordinate_transitions = 0
 
     @property
     def projection_engine(self) -> PitchProjectionEngine:
@@ -219,14 +255,18 @@ class VisionCore:
         from app.vision.backends import UltralyticsBackend
 
         if self.enable_player and self._player_model is None:
-            backend = None if self.inference_backend == "auto" else self.inference_backend
+            backend = (
+                None if self.inference_backend == "auto" else self.inference_backend
+            )
             self._player_model = UltralyticsBackend(
                 self.player_model_path,
                 backend=backend,
                 device=self.device,
             )
         if self.enable_pitch and self._pitch_model is None:
-            backend = None if self.inference_backend == "auto" else self.inference_backend
+            backend = (
+                None if self.inference_backend == "auto" else self.inference_backend
+            )
             self._pitch_model = UltralyticsBackend(
                 self.pitch_model_path,
                 backend=backend,
@@ -289,7 +329,8 @@ class VisionCore:
     def _should_detect_pitch(self, frame_index: int) -> bool:
         return (
             self._last_pitch_detection_frame is None
-            or frame_index - self._last_pitch_detection_frame >= self.pitch_detection_interval
+            or frame_index - self._last_pitch_detection_frame
+            >= self.pitch_detection_interval
         )
 
     def _projection_for_frame(
@@ -312,7 +353,9 @@ class VisionCore:
             self.pitch_inference_time_ms += (time.perf_counter() - start) * 1000
             self.pitch_detection_count += 1
             self._last_pitch_detection_frame = frame_index
-            projection = self._projection_engine.update(frame=frame, keypoints=keypoints)
+            projection = self._projection_engine.update(
+                frame=frame, keypoints=keypoints
+            )
             if force_refresh and projection.homography_status != "fresh":
                 invalidate = getattr(self._projection_engine, "invalidate", None)
                 if callable(invalidate):
@@ -423,6 +466,102 @@ class VisionCore:
         self._last_output_homography = homography
         return replace(projection, homography=homography)
 
+    def _paint_override(self, frame, projection, boxes, frame_index):
+        """Overlay independently supported paint without mutating model state."""
+        registration = getattr(self, "_paint_registration", None)
+        if registration is not None:
+            result = registration.update(
+                frame, projection.homography, boxes, frame_index
+            )
+            if result.coordinate_transition:
+                self._paint_filter.reset()
+                self.paint_coordinate_transitions += 1
+            # A rejected registration cannot inherit model-only coordinates.
+            # The transition frame is intentionally blank so the new geometry
+            # is never interpreted as instantaneous player motion.
+            return replace(
+                projection,
+                homography=None if result.coordinate_transition else result.homography,
+                homography_status=(
+                    "unavailable" if result.coordinate_transition else result.status
+                ),
+                fit_source="paint",
+                coordinate_transition=result.coordinate_transition,
+                projection_quality=result.quality,
+                geometry_epoch=result.epoch,
+            )
+        previous = self._paint_homography
+        motion = (
+            self._paint_motion.measure(frame, excluded_boxes=boxes)
+            if previous is not None
+            else None
+        )
+        transported = None
+        if (
+            previous is not None
+            and motion is not None
+            and motion.response >= motion.minimum_response
+        ):
+            if motion.image_transform is not None:
+                transported = previous @ np.linalg.inv(motion.image_transform)
+            else:
+                transported = translate_homography(
+                    previous, (motion.shift_x_px, motion.shift_y_px)
+                )
+        interval = max(1, round(self.fps * (0.2 if previous is not None else 0.5)))
+        candidate = None
+        if frame_index - self._paint_attempt_frame >= interval:
+            self._paint_attempt_frame = frame_index
+            candidate = self._paint_lines.estimate(
+                frame, projection.homography, transported, boxes
+            )
+        compensated_prior = transported
+        status = "reused"
+        if candidate is not None:
+            # A changed view is accepted only from the independent nested
+            # paint layout, never from the model's own landmark residual.
+            transported = candidate
+            self._paint_homography = candidate
+            self._paint_accepted_frame = frame_index
+            self._paint_motion.mark_reference(frame, excluded_boxes=boxes)
+            status = "fresh"
+        elif frame_index - self._paint_accepted_frame >= round(self.fps * 0.5):
+            self._paint_homography = None
+            transported = None
+        visible = transported is not None
+        transition = visible != self._paint_visible
+        if visible and self._paint_visible and candidate is not None:
+            # Coordinate changes supported by paint are marked explicitly,
+            # rather than presented as instantaneous player motion.
+            feet = np.asarray(
+                [[(box[0] + box[2]) / 2, box[3]] for box in boxes]
+            ).reshape(-1, 2)
+            deviation = (
+                homography_deviation(compensated_prior, candidate, feet)
+                if compensated_prior is not None
+                else None
+            )
+            transition = deviation is not None and deviation > 200
+        self._paint_visible = visible
+        if transition:
+            self._paint_filter.reset()
+            self.paint_coordinate_transitions += 1
+            return replace(
+                projection,
+                homography=None,
+                homography_status="unavailable",
+                fit_source="paint" if visible else "model",
+                coordinate_transition=True,
+            )
+        if visible:
+            return replace(
+                projection,
+                homography=transported,
+                homography_status=status,
+                fit_source="paint",
+            )
+        return projection
+
     def _field_coordinates(
         self,
         detections: sv.Detections,
@@ -432,9 +571,9 @@ class VisionCore:
         if projection.homography is None or len(detections) == 0:
             return field_xy
 
-        image_xy = detections.get_anchors_coordinates(anchor=sv.Position.BOTTOM_CENTER).astype(
-            np.float32
-        )
+        image_xy = detections.get_anchors_coordinates(
+            anchor=sv.Position.BOTTOM_CENTER
+        ).astype(np.float32)
         try:
             transformed = cv2.perspectiveTransform(
                 image_xy.reshape(-1, 1, 2), projection.homography
@@ -510,7 +649,9 @@ class VisionCore:
             if self._track_missing_frames.get(track_id, 0) > 0
         }
         newly_missing_ids = {
-            track_id for track_id in missing_ids if self._track_missing_frames.get(track_id, 0) == 0
+            track_id
+            for track_id in missing_ids
+            if self._track_missing_frames.get(track_id, 0) == 0
         }
         if newly_missing_ids:
             self.track_id_interruptions += len(newly_missing_ids)
@@ -629,7 +770,33 @@ class VisionCore:
                 for track_id in tracked_detections.tracker_id
             ]
             box_heights = tracked_detections.xyxy[:, 3] - tracked_detections.xyxy[:, 1]
-            field_xy = self._position_filter.update(keys, field_xy, frame_index, box_heights)
+            field_xy = self._position_filter.update(
+                keys, field_xy, frame_index, box_heights
+            )
+        if self.enable_paint_projection:
+            if entity_update.rebindings and self._paint_filter is not None:
+                # A tracker identity replacement starts a new motion history;
+                # previously rejected measurements cannot become its origin.
+                for track_id in entity_update.rebindings:
+                    key = entity_update.entity_ids.get(int(track_id), int(track_id))
+                    self._paint_filter.reset_key(key)
+            projection = self._paint_override(
+                undistorted_frame, projection, detections.xyxy, frame_index
+            )
+            if projection.coordinate_transition or (
+                getattr(self, "_paint_registration", None) is not None
+                and projection.homography is None
+            ):
+                field_xy[:] = np.nan
+            elif projection.fit_source == "paint":
+                field_xy = self._field_coordinates(tracked_detections, projection)
+                if (
+                    self.stabilize_projection
+                    and tracked_detections.tracker_id is not None
+                ):
+                    field_xy = self._paint_filter.update(
+                        keys, field_xy, frame_index, box_heights
+                    )
         self.frames_processed += 1
         if projection.available:
             self.homography_available_count += 1

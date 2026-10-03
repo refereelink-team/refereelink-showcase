@@ -1,11 +1,19 @@
+import type {
+  CalibrationLabel,
+  CalibrationMetadata,
+  CalibrationSnapshot,
+} from './types/calibration';
+import type { TrackingCase, TrackingFramesPage, TrackingResult } from './types/tracking';
 import type { Catalog, Job, TelemetrySnapshot, TelemetryConfig } from './types';
 import type {
   LiveMultiviewStatus,
   MultiviewDecision,
   ReviewRecord,
+  ReviewPreview,
   FoulFacts,
   ReviewState,
   ExplanationResponse,
+  MultiviewStatus,
 } from './types/multiview';
 export async function request<T>(
   path: string,
@@ -20,14 +28,19 @@ export async function request<T>(
       signal: options?.signal || controller.signal,
     });
     const payload = await response.json().catch(() => null);
-    if (!response.ok)
+    if (!response.ok) {
+      const detail = payload?.detail;
+      const conflict = typeof detail === 'object' && detail?.code === 'REVIEW_REVISION_CONFLICT';
       throw new Error(
-        typeof payload?.detail === 'string'
-          ? payload.detail
-          : typeof payload?.error === 'string'
-            ? payload.error
-            : `服务暂不可用 (${response.status})`,
+        conflict
+          ? `复核修订冲突：服务器已是修订 ${detail.current_revision}。草稿已保留，请读取最新复核后再保存。`
+          : typeof detail === 'string'
+            ? detail
+            : typeof payload?.error === 'string'
+              ? payload.error
+              : `服务暂不可用 (${response.status})`,
       );
+    }
     if (payload === null) throw new Error('服务返回了空响应');
     return payload as T;
   } catch (error) {
@@ -50,6 +63,7 @@ export const post = <T>(path: string, body?: unknown, timeoutMs?: number) =>
   );
 export const api = {
   catalog: () => request<Catalog>('/api/catalog'),
+  multiviewStatus: () => request<MultiviewStatus>('/api/multiview/status'),
   live: () => request<LiveMultiviewStatus>('/api/multiview/live/status'),
   liveControl: (action: 'start' | 'stop') =>
     post<LiveMultiviewStatus>(`/api/multiview/live/${action}`),
@@ -64,6 +78,12 @@ export const api = {
     request<{ review: ReviewRecord | null; analysis: MultiviewDecision | null }>(
       `/api/multiview/cases/${encodeURIComponent(id)}/review`,
     ),
+  reviewHistory: (id: string) =>
+    request<{ count: number; history: ReviewRecord[] }>(
+      `/api/multiview/cases/${encodeURIComponent(id)}/review/history`,
+    ),
+  previewReview: (id: string, facts: FoulFacts) =>
+    post<ReviewPreview>(`/api/multiview/cases/${encodeURIComponent(id)}/review/preview`, { facts }),
   saveReview: (
     id: string,
     body: {
@@ -71,6 +91,7 @@ export const api = {
       analysis_id: string | null;
       facts: FoulFacts;
       review_state: ReviewState;
+      preserve_unknowns?: boolean;
     },
   ) =>
     request<{ review: ReviewRecord }>(`/api/multiview/cases/${encodeURIComponent(id)}/review`, {
@@ -87,6 +108,42 @@ export const api = {
     post<Job>('/api/experiments/jobs', { kind, case_id }),
   job: (id: string) => request<Job>(`/api/experiments/jobs/${encodeURIComponent(id)}`),
   jobs: () => request<{ jobs: Job[] }>('/api/experiments/jobs'),
+  trackingCase: (id: string) =>
+    request<TrackingCase>(`/api/tracking/cases/${encodeURIComponent(id)}`),
+  startTracking: (id: string) => post<Job>(`/api/tracking/cases/${encodeURIComponent(id)}/jobs`),
+  trackingResult: (id: string) =>
+    request<TrackingResult>(`/api/tracking/results/${encodeURIComponent(id)}`),
+  trackingFrames: (id: string, revision: string, offset: number) =>
+    request<TrackingFramesPage>(
+      `/api/tracking/results/${encodeURIComponent(id)}/frames?offset=${offset}&limit=240&revision=${encodeURIComponent(revision)}`,
+    ),
+
+  createCalibration: () => post<CalibrationSnapshot>('/api/calibration/sessions', {}),
+  calibration: (id: string) =>
+    request<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}`),
+  prepareCalibration: (id: string, revision: number, start_ms: number, end_ms: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/prepare`, {
+      revision,
+      start_ms,
+      end_ms,
+    }),
+  labelCalibration: (id: string, revision: number, track_id: number, label: CalibrationLabel) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/labels`, {
+      revision,
+      track_id,
+      label,
+    }),
+  validateCalibration: (id: string, revision: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/validate`, {
+      revision,
+    }),
+  resetCalibration: (id: string, revision: number) =>
+    post<CalibrationSnapshot>(`/api/calibration/sessions/${encodeURIComponent(id)}/reset`, {
+      revision,
+    }),
+  calibrationMetadata: (id: string) =>
+    request<CalibrationMetadata>(`/api/calibration/sessions/${encodeURIComponent(id)}/metadata`),
+
   telemetry: () => request<TelemetrySnapshot>('/api/telemetry/snapshot'),
   telemetryAction: (action: 'demo/start' | 'demo/stop' | 'connect' | 'disconnect') =>
     post<TelemetrySnapshot>(`/api/telemetry/${action}`),
