@@ -65,7 +65,7 @@
     "app/classification/team_calibration/clip.py": {
       "source_sha256": "04ae5c681adca972654218f4ecd503a76c379a823ed78db4525af0a041cacf4b",
       "extracted_sha256": "4e30de635522303c0e5778b27d8b4dc76b9b5565d332dab6e22f30b19c5d5565",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Opt-in clean review media, verified source FPS, cooperative cancellation, and half-second keyframe intervals for independent calibration practice sessions; legacy encoder defaults remain unchanged.",
       "canonical_checkout_sha256": "83a05c1ad2f772ed752b209adf0dfa32b04ab2537e12c5bf9b3b4a43686e5a62",
@@ -134,7 +134,7 @@
     "app/config/pitch.py": {
       "source_sha256": "f8a6af7f6c697f923b02e8074a594518021f252f1fc00abd9ba49622a4666623",
       "extracted_sha256": "5a45e9d0108508ec3a403b2983d204ebbd3c2a76feb27f52c50b04c8351ab025",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Add explicitly selected source-informed geometry factory while preserving legacy defaults and unknown-source behavior.",
       "canonical_checkout_sha256": "5a45e9d0108508ec3a403b2983d204ebbd3c2a76feb27f52c50b04c8351ab025",
@@ -162,8 +162,8 @@
     },
     "app/events/engine.py": {
       "source_sha256": "bad8ace68b0529b0dd9d77681fbdd0aaa0317e9cc236b0909a559256c43ff147",
-      "extracted_sha256": "bad8ace68b0529b0dd9d77681fbdd0aaa0317e9cc236b0909a559256c43ff147",
-      "modified_for_extraction": false
+      "extracted_sha256": "d48d9d9799d32af81eba15b01b45ecf5d915d972626ad46f78154baeeedc2074",
+      "modified_for_extraction": true
     },
     "app/field_ingest/__init__.py": {
       "source_sha256": "695125c5f09ed9a91896b2f68b3965899e0cfb03ba555188265d6807da645832",
@@ -203,7 +203,7 @@
     "app/geometry/camera.py": {
       "source_sha256": "cf0e9509c982c993128e136e7bb64af7cf667355bf0dda1d79dec7f59d321239",
       "extracted_sha256": "6a09be11ddc2c78b83cecd41c700ad3f41dfc69314d739b25add31a91f12d0e0",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Add isolated paint-only similarity motion estimation; original model estimator behavior is preserved.",
       "canonical_checkout_sha256": "6a09be11ddc2c78b83cecd41c700ad3f41dfc69314d739b25add31a91f12d0e0",
@@ -212,7 +212,7 @@
     "app/geometry/pitch_lines.py": {
       "source_sha256": null,
       "extracted_sha256": "f05acfd66ba60c7c89f81c483a59fa45b462c1b55d08fbb44b74d072d4d04ed8",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "added_after_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "New bounded independent grass-adjacent paint-line registration for nested goal and penalty areas, with isolated motion support. Field-line registration, projection metadata, strict measurement filtering and explicit offline sequence refinement in the source-informed profile.",
@@ -222,7 +222,7 @@
     "app/geometry/pitch_projection.py": {
       "source_sha256": "cbb1b540e50656a78974418163eaeaf015dba1c53c1dd59b1e2f75a3d6ae29f8",
       "extracted_sha256": "e0d938eef99d4d47efd0406597e96b51d102116af852c3f97eaae333a581e50e",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Expose registration metadata while preserving the inherited model control path. Field-line registration, projection metadata, strict measurement filtering and explicit offline sequence refinement in the source-informed profile.",
       "canonical_checkout_sha256": "090f70d038feb71c60f7270c0ff11513fe4a666442595bcb5494209d3177b249",
@@ -231,7 +231,7 @@
     "app/geometry/position_filter.py": {
       "source_sha256": "52589495608af3af919ed09f2277cef96a3140c63b8c9cc2c525fee653f7f873",
       "extracted_sha256": "a5e23d1fda12627da7b12986be1d45412515a30b2e94bc8d308e1d864f06cd42",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "matches_canonical_checkout": false,
       "local_modification": "Add opt-in strict outlier rejection with separate accepted and observed clocks; preserve default legacy reacquisition behavior. Selectively reset rebound identities without resetting unrelated tracks."
@@ -248,8 +248,8 @@
     },
     "app/pipeline/engine.py": {
       "source_sha256": "1ecb532c7247b504b68219f565f1a58a97944167ade7de7215787c5325ebd0c1",
-      "extracted_sha256": "9d497095d966c6cd0da08b091bad0fc553c179fb3a09e5e6f07500facd6a5db0",
-      "modified_for_extraction": false,
+      "extracted_sha256": "cb324ae118d7f4da69b7e270b18f9d9b65ed5a5b23a8d3a9287a26951fff2fe0",
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Forward optional geometry and explicitly gated paint processing to the shared inference core. Field-line registration, projection metadata, strict measurement filtering and explicit offline sequence refinement in the source-informed profile.",
       "canonical_checkout_sha256": "c221414da894032810908b9e5b39c9addf3f3d43db026fe381ef08e03f131243",
@@ -288,7 +288,7 @@
     "app/state/models.py": {
       "source_sha256": "002b22f3559cf39ed21d08bd6f2a54de268683ebc5f281baf5556e0507218cdc",
       "extracted_sha256": "38a76220b3cfe64576dd87cdf75502f400e8516b7ba951b57e935f7201cad526",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "matches_canonical_checkout": false,
       "local_modification": "Add optional projection quality and geometry epoch for immutable native tracking observations."
@@ -311,7 +311,7 @@
     "app/vision/core.py": {
       "source_sha256": "176458a2fdb65deea91d5c70d208abc566d4cf08d64196bcfa8ad3622822ae7e",
       "extracted_sha256": "9d45b2e2d4cbeb112d4f0060fa2d5d3b5e6fb58b4fc4db86cd185be735b44a89",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Integrate opt-in independently validated field registration, strict measurement filtering, missing-geometry isolation and explicit coordinate transitions.",
       "canonical_checkout_sha256": "9e6ad4c50cb531a5a2a3cf52e5bbf3afbe7be37fef6d3403a59fb0f7d6d497b0",
@@ -345,7 +345,7 @@
     "tools/render_diagnostic_video.py": {
       "source_sha256": "ef3eaca701c8491a7e4230482364fd44bf59e3850d2a1d756df56613e9d5fd0b",
       "extracted_sha256": "d90fb2c65ac2824ee6a3db1e61e3e469d7520c1ba0ec6a490712f92b69233c88",
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "Render using the same explicitly supplied runtime geometry as inference.",
       "canonical_checkout_sha256": "bc1098b911c7a9a79eaa2e6794b0dba209a2542257b7c74b6ce711a7e3b09126",
@@ -353,15 +353,15 @@
     },
     "tools/run_night_ablation.py": {
       "source_sha256": "5f3253896e373bdffb86493455b95a3c3c3bbfabfbc99ba8992904f397d21245",
-      "extracted_sha256": "65d454a8a68d4c1ac9896bfc484ce7370132dcac2f15e8c63fa40cfb945004e7",
-      "modified_for_extraction": false,
+      "extracted_sha256": "2e045106e180c9d9142d81dc6ec47c2d300141137de3617ff2d915109a4e8595",
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
-      "local_modification": "Preserve causal artifacts, refine verified tracking-only sequences, record homography/history hashes and rerender original media; include postprocessing in total timing.",
+      "local_modification": "Record causal evidence, verified source and load-time model snapshots; add contact-supported local verification, source-time replay and complete simultaneous-event rendering. Preserve isolated projection refinement.",
       "matches_canonical_checkout": false
     },
     "app/geometry/pitch_registration.py": {
       "source_sha256": null,
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "New source-isolated field-paint evidence, conditioned registration and bounded offline paint correction; no upstream source claimed.",
       "matches_canonical_checkout": false,
@@ -370,12 +370,48 @@
     },
     "app/geometry/sequence_refinement.py": {
       "source_sha256": null,
-      "modified_for_extraction": false,
+      "modified_for_extraction": true,
       "modified_after_extraction": true,
       "local_modification": "New offline camera-shot refinement using complete nested field anchors, independent consistency checks, current-paint correction and source-aligned native reprojection; no upstream source claimed.",
       "matches_canonical_checkout": false,
       "extracted_sha256": "7ce7ab58f4e6bd2f15ef9ce7896b9da0119770a0513f7d1667957dc847562484",
       "added_after_extraction": true
+    },
+    "app/foul_detection/causal_predictor.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "0c4087ef27a655d7986081864b7643bddf1ae9fadff4b0bc86ee22b385298ee1"
+    },
+    "app/foul_detection/interactions.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "b7b899851ac3bad80456d0c98e92d551620aa5fe67f43d4f1d21c7ebb2029579"
+    },
+    "app/foul_detection/temporal.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "787fcf88dd061ea10050bacaf784e381d99d8968b2f28792744bd5f28f886a5d"
+    },
+    "app/foul_detection/multidim.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "a09dc82fd396a0fc6697adbd676955c7df966334fddbfb70c408337dbc2858fc"
+    },
+    "tools/source_provenance.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "de877b8a98b10c122eda5896a400f5f611954eeae711a36d3925288a23c250e3"
+    },
+    "app/foul_detection/contact.py": {
+      "source_sha256": null,
+      "origin": "showcase-local",
+      "modified_for_extraction": true,
+      "extracted_sha256": "4724f2f58775f98d192731032d81bb6e299a46f9df6ab48ef456dbb853c5eca4"
     }
   },
   "dependency_edges": {
@@ -391,7 +427,13 @@
       "tools/render_diagnostic_video.py",
       "app/geometry/sequence_refinement.py",
       "app/geometry/pitch_registration.py",
-      "app/state/models.py"
+      "app/state/models.py",
+      "app/foul_detection/causal_predictor.py",
+      "app/foul_detection/interactions.py",
+      "app/foul_detection/temporal.py",
+      "app/foul_detection/multidim.py",
+      "tools/source_provenance.py",
+      "app/foul_detection/contact.py"
     ],
     "tools/render_diagnostic_video.py": [
       "app/annotators/pitch.py",
@@ -594,6 +636,20 @@
     ],
     "app/geometry/sequence_refinement.py": [
       "app/geometry/position_filter.py"
+    ],
+    "app/foul_detection/temporal.py": [
+      "app/foul_detection/interactions.py"
+    ],
+    "app/foul_detection/causal_predictor.py": [
+      "app/foul_detection/predictor.py"
+    ],
+    "app/foul_detection/multidim.py": [
+      "app/foul_detection/types.py"
+    ],
+    "app/foul_detection/interactions.py": [],
+    "tools/source_provenance.py": [],
+    "app/foul_detection/contact.py": [
+      "app/foul_detection/temporal.py"
     ]
   },
   "external_import_names": [
@@ -634,7 +690,7 @@
     "uuid"
   ],
   "local_corrections": {
-    "description": "Isolated calibration practice, source-validated field-line registration and offline trajectory refinement. Original upstream identities remain unchanged.",
+    "description": "Isolated calibration practice, field-line registration, offline trajectory refinement, versioned causal foul experiments and conservative contact-supported local verification. Original upstream identities remain unchanged. Qualification records are separate private evaluation artifacts and establish development-clip acceptance only.",
     "files": [
       "app/classification/team_calibration/clip.py",
       "app/config/pitch.py",
@@ -648,7 +704,13 @@
       "app/geometry/pitch_registration.py",
       "app/geometry/sequence_refinement.py",
       "app/geometry/position_filter.py",
-      "app/state/models.py"
+      "app/state/models.py",
+      "app/foul_detection/causal_predictor.py",
+      "app/foul_detection/interactions.py",
+      "app/foul_detection/temporal.py",
+      "app/foul_detection/multidim.py",
+      "app/events/engine.py",
+      "app/foul_detection/contact.py"
     ]
   }
 }

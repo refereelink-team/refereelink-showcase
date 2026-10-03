@@ -550,13 +550,6 @@ class InferencePipeline:
         # Camera vision no longer estimates the ball. Coordinates stay empty
         # until a later sensor writes field_x, field_y, and status.
         ball_state = BallState()
-        foul_event = self._process_foul(
-            frame=vision_frame.undistorted_frame,
-            frame_id=self._source.frame_count,
-            timestamp_s=capture_timestamp_ms / 1000.0,
-            ball_state=ball_state,
-        )
-
         player_states: list[PlayerState] = []
         semantic_results = self._update_semantics(
             rebindings=vision_frame.rebindings,
@@ -637,6 +630,15 @@ class InferencePipeline:
             if team_id == -1:
                 self.team_unknown_count = getattr(self, "team_unknown_count", 0) + 1
 
+        foul_event = self._process_foul(
+            frame=vision_frame.undistorted_frame,
+            frame_id=self._source.frame_count,
+            timestamp_s=capture_timestamp_ms / 1000.0,
+            ball_state=ball_state,
+            players=player_states,
+            captured=captured,
+        )
+
         # Draw smoothed display boxes. Brief detector gaps are held only for
         # visualization; stale tracks never enter FrameState or classifiers.
         annotated_frame = vision_frame.undistorted_frame.copy()
@@ -696,7 +698,7 @@ class InferencePipeline:
         if event_engine is not None:
             frame_state.events = event_engine.update(frame_state)
         if foul_event is not None:
-            frame_state.events.append(foul_event)
+            frame_state.events.extend(foul_event if isinstance(foul_event, list) else [foul_event])
         for event in frame_state.events:
             self._store.add_event(event)
 
@@ -725,12 +727,28 @@ class InferencePipeline:
         frame_id: int,
         timestamp_s: float,
         ball_state: BallState,
+        players=None,
+        captured=None,
     ):
         foul_detector = getattr(self, "_foul_detector", None)
         if foul_detector is None:
             return None
         try:
-            prediction = foul_detector.update(frame, frame_index=frame_id)
+            if getattr(foul_detector, "causal_interactions", False):
+                pts_s = getattr(foul_detector, "source_pts_s", None)
+                if pts_s is None and captured is not None:
+                    if captured.t_us is not None:
+                        pts_s = captured.t_us / 1_000_000.0
+                    elif captured.transport_pts90k is not None:
+                        pts_s = captured.transport_pts90k / 90_000.0
+                if pts_s is None:
+                    raise ValueError("Causal foul detection requires source PTS")
+                prediction = foul_detector.update(
+                    frame, frame_index=frame_id, pts_s=pts_s,
+                    players=[player.model_dump(mode="json") for player in (players or [])],
+                )
+            else:
+                prediction = foul_detector.update(frame, frame_index=frame_id)
             self.foul_inference_count += 1
             field_xy = (
                 (ball_state.field_x, ball_state.field_y)
@@ -738,6 +756,11 @@ class InferencePipeline:
                 else None
             )
             foul_adapter = getattr(self, "_foul_adapter", FoulEventAdapter())
+            if getattr(foul_detector, "causal_interactions", False):
+                predictions = [prediction, *foul_detector.drain_pending(pts_s)]
+                return [event for item in predictions
+                        if (event := foul_adapter.update(item, frame_id=frame_id,
+                                                        timestamp=timestamp_s)) is not None]
             return foul_adapter.update(
                 prediction,
                 frame_id=frame_id,

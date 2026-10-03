@@ -4,7 +4,8 @@ import type {
   CalibrationSnapshot,
 } from './types/calibration';
 import type { TrackingCase, TrackingFramesPage, TrackingResult } from './types/tracking';
-import type { Catalog, Job, TelemetrySnapshot, TelemetryConfig } from './types';
+import type { FoulFramesPage, FoulResult, FoulPreparation } from './types/foul';
+import type { Catalog, DetectionProfile, Job, TelemetrySnapshot, TelemetryConfig } from './types';
 import type {
   LiveMultiviewStatus,
   MultiviewDecision,
@@ -104,10 +105,16 @@ export const api = {
       revision,
       use_llm: true,
     }),
-  createJob: (kind: 'tracking' | 'foul', case_id: string) =>
-    post<Job>('/api/experiments/jobs', { kind, case_id }),
+  createJob: (kind: 'tracking' | 'foul', case_id: string, detection_profile?: DetectionProfile) =>
+    post<Job>('/api/experiments/jobs', { kind, case_id, detection_profile }),
   job: (id: string) => request<Job>(`/api/experiments/jobs/${encodeURIComponent(id)}`),
   jobs: () => request<{ jobs: Job[] }>('/api/experiments/jobs'),
+  foulPreparation: () => request<FoulPreparation>('/api/foul/preparation'),
+  foulResult: (id: string) => request<FoulResult>(`/api/foul/results/${encodeURIComponent(id)}`),
+  foulFrames: (id: string, revision: string, offset: number) =>
+    request<FoulFramesPage>(
+      `/api/foul/results/${encodeURIComponent(id)}/frames?offset=${offset}&limit=500&revision=${encodeURIComponent(revision)}`,
+    ),
   trackingCase: (id: string) =>
     request<TrackingCase>(`/api/tracking/cases/${encodeURIComponent(id)}`),
   startTracking: (id: string) => post<Job>(`/api/tracking/cases/${encodeURIComponent(id)}/jobs`),

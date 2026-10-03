@@ -1,16 +1,25 @@
 import type { CandidateRecord } from '../events';
+import { candidateEventTime, foulActionLabel } from '../events';
 export default function EventTimeline({
   events,
   duration,
   selected,
   onSelect,
   loading,
+  emptyMessage = '本次输出无候选事件',
+  currentTime,
+  onSeek,
+  disabled = false,
 }: {
   events: CandidateRecord[];
   duration: number;
   selected: string | null;
   onSelect: (event: CandidateRecord) => void;
   loading: boolean;
+  emptyMessage?: string;
+  currentTime?: number;
+  onSeek?: (timeS: number) => void;
+  disabled?: boolean;
 }) {
   return (
     <section className="timeline-panel">
@@ -21,20 +30,36 @@ export default function EventTimeline({
             ? '读取候选记录…'
             : events.length
               ? `${events.length} 个模型候选 · 点击定位`
-              : '本次输出无候选事件'}
+              : emptyMessage}
         </span>
       </div>
-      <div className="event-timeline">
-        <div className="timeline-track" />
+      <div className={`event-timeline ${onSeek ? 'interactive' : ''}`}>
+        <div className="timeline-track" aria-hidden="true" />
+        {onSeek && (
+          <input
+            className="event-timeline-seek"
+            type="range"
+            aria-label="事件时间线播放进度"
+            aria-valuetext={`${(currentTime || 0).toFixed(2)} 秒，共 ${duration.toFixed(2)} 秒`}
+            min="0"
+            max={duration || 1}
+            step="0.01"
+            value={Math.max(0, Math.min(duration, currentTime || 0))}
+            disabled={disabled || !duration}
+            onChange={(e) => onSeek(Number(e.target.value))}
+          />
+        )}
         {events.map((record, index) => (
           <button
             key={record.event.id}
+            disabled={disabled}
             className={`timeline-event ${selected === record.event.id ? 'selected' : ''}`}
             style={{
-              left: `${Math.min(98, Math.max(2, (record.media_pts_seconds / Math.max(0.01, duration)) * 100))}%`,
+              left: `${Math.min(100, Math.max(0, (candidateEventTime(record) / Math.max(0.01, duration)) * 100))}%`,
             }}
-            aria-label={`候选 ${index + 1}，${record.media_pts_seconds.toFixed(2)} 秒`}
-            title={`${record.event.foul_details?.action || '候选事件'} · ${record.media_pts_seconds.toFixed(2)}s`}
+            aria-label={`候选 ${index + 1}，${candidateEventTime(record).toFixed(2)} 秒`}
+            title={`${foulActionLabel(record.event.foul_details?.action)} · ${candidateEventTime(record).toFixed(2)}s`}
+            aria-pressed={selected === record.event.id}
             onClick={() => onSelect(record)}
           >
             <span />
@@ -51,12 +76,14 @@ export default function EventTimeline({
           {events.map((record, index) => (
             <button
               key={record.event.id}
+              disabled={disabled}
               className={selected === record.event.id ? 'selected' : ''}
+              aria-pressed={selected === record.event.id}
               onClick={() => onSelect(record)}
             >
               <span>{String(index + 1).padStart(2, '0')}</span>
-              <strong>{record.event.foul_details?.action || '候选事件'}</strong>
-              <small>{record.media_pts_seconds.toFixed(2)}s</small>
+              <strong>{foulActionLabel(record.event.foul_details?.action)}</strong>
+              <small>{candidateEventTime(record).toFixed(2)}s</small>
             </button>
           ))}
         </div>

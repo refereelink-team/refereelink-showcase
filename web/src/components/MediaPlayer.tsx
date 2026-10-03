@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, Empty } from './UI';
 import { mediaUrl } from '../api';
+import { observeVideoPresentation } from './multiview/videoPresentation';
+import { regionForPresentation, type MediaRegion } from './mediaRegion';
 export function timecode(value: number) {
   if (!Number.isFinite(value)) return '0:00';
   return `${Math.floor(value / 60)}:${String(Math.floor(value % 60)).padStart(2, '0')}`;
@@ -12,6 +14,7 @@ export default function MediaPlayer({
   onTime,
   seekTo,
   seekToken,
+  candidateRegion,
 }: {
   src?: string | null;
   poster?: string | null;
@@ -19,6 +22,7 @@ export default function MediaPlayer({
   onTime?: (time: number) => void;
   seekTo?: number;
   seekToken?: number;
+  candidateRegion?: MediaRegion;
 }) {
   const video = useRef<HTMLVideoElement>(null),
     frame = useRef<HTMLDivElement>(null);
@@ -27,13 +31,21 @@ export default function MediaPlayer({
     [duration, setDuration] = useState(0),
     [muted, setMuted] = useState(true),
     [speed, setSpeed] = useState('1'),
+    [presentedTime, setPresentedTime] = useState<number | null>(null),
+    [nativeSize, setNativeSize] = useState({ width: 0, height: 0 }),
     [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setTime(0);
     setDuration(0);
     setPlaying(false);
     setError(null);
+    setPresentedTime(null);
+    setNativeSize({ width: 0, height: 0 });
   }, [src]);
+  useEffect(() => {
+    if (!video.current || !candidateRegion) return;
+    return observeVideoPresentation(video.current, setPresentedTime);
+  }, [src, Boolean(candidateRegion)]);
   useEffect(() => {
     if (video.current && seekTo !== undefined) video.current.currentTime = Math.max(0, seekTo);
   }, [seekTo, seekToken]);
@@ -64,6 +76,12 @@ export default function MediaPlayer({
       setError('当前浏览器不支持全屏');
     }
   };
+  const contactRegion = regionForPresentation(
+    candidateRegion,
+    presentedTime,
+    nativeSize.width,
+    nativeSize.height,
+  );
   return (
     <div
       className="media-frame"
@@ -91,6 +109,10 @@ export default function MediaPlayer({
           muted={muted}
           onLoadedMetadata={(e) => {
             setDuration(e.currentTarget.duration);
+            setNativeSize({
+              width: e.currentTarget.videoWidth,
+              height: e.currentTarget.videoHeight,
+            });
             e.currentTarget.playbackRate = Number(speed);
             if (seekTo !== undefined)
               e.currentTarget.currentTime = Math.min(seekTo, e.currentTarget.duration);
@@ -107,6 +129,26 @@ export default function MediaPlayer({
         />
       ) : (
         <Empty>选择输入视频</Empty>
+      )}
+      {contactRegion && (
+        <svg
+          className="media-contact-region"
+          viewBox={`0 0 ${contactRegion.width} ${contactRegion.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="检测到的事件区域"
+        >
+          <rect
+            x={contactRegion.box[0]}
+            y={contactRegion.box[1]}
+            width={contactRegion.box[2] - contactRegion.box[0]}
+            height={contactRegion.box[3] - contactRegion.box[1]}
+            fill="rgba(247, 191, 54, 0.10)"
+            stroke="#f7bf36"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
       )}
       {label && <span className="media-label">{label}</span>}
       {error && (
@@ -130,7 +172,9 @@ export default function MediaPlayer({
           value={Math.min(time, duration || 1)}
           disabled={!duration}
           onChange={(e) => {
-            if (video.current) video.current.currentTime = Number(e.target.value);
+            const nextTime = Number(e.target.value);
+            setTime(nextTime);
+            if (video.current) video.current.currentTime = nextTime;
           }}
         />
         <select

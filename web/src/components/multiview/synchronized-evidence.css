@@ -205,6 +205,7 @@
     padding: 4px 6px;
 }
 .se-tools .se-time {
+    margin-right: auto;
     font-size: 11px;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
@@ -213,17 +214,6 @@
     padding: 0 3px;
     font-style: normal;
     color: #9da8b8;
-}
-.se-tools input[type='range'] {
-    min-width: 48px;
-    min-height: 0;
-    height: 18px;
-    flex: 1;
-    width: auto;
-    border: 0;
-    padding: 0;
-    background: transparent;
-    accent-color: var(--lime);
 }
 .se-tools select {
     width: 62px;
@@ -239,21 +229,74 @@
     color: #a64842;
     font-size: 12px;
 }
+.se-timeline-panel {
+    --se-label-width: 58px;
+    --se-time-width: 116px;
+    --se-track-gap: 12px;
+}
+.se-shared-timeline {
+    margin-left: calc(var(--se-label-width) + var(--se-track-gap));
+    margin-right: calc(var(--se-time-width) + var(--se-track-gap));
+}
+.se-shared-timeline .se-shared-seek {
+    position: absolute;
+    top: 29px;
+    left: 0;
+    width: 100%;
+    height: 34px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    appearance: none;
+    cursor: pointer;
+    z-index: 1;
+}
+.se-shared-seek:disabled {
+    cursor: default;
+}
+.se-shared-timeline .se-shared-seek::-webkit-slider-runnable-track {
+    height: 1px;
+    background: transparent;
+}
+.se-shared-timeline .se-shared-seek::-webkit-slider-thumb {
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -5.5px;
+    border: 2px solid var(--canvas, #f4f5f7);
+    border-radius: 50%;
+    background: var(--ink);
+    outline: 1px solid var(--ink);
+}
+.se-shared-timeline .se-shared-seek::-moz-range-track {
+    height: 1px;
+    background: transparent;
+}
+.se-shared-timeline .se-shared-seek::-moz-range-thumb {
+    width: 8px;
+    height: 8px;
+    border: 2px solid var(--canvas, #f4f5f7);
+    border-radius: 50%;
+    background: var(--ink);
+    outline: 1px solid var(--ink);
+}
+.se-shared-timeline .timeline-track,
+.se-shared-timeline .timeline-ticks {
+    pointer-events: none;
+}
 .se-timelines {
     display: grid;
-    gap: 5px;
-    margin-top: 12px;
+    gap: 2px;
 }
 .se-timeline-row {
     display: grid;
-    grid-template-columns: 58px minmax(0, 1fr) 116px;
-    gap: 12px;
+    grid-template-columns: var(--se-label-width) minmax(0, 1fr) var(--se-time-width);
+    gap: var(--se-track-gap);
     align-items: center;
-    min-height: 39px;
-    padding: 7px 12px;
-    background: var(--surface, #fff);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    min-height: 34px;
 }
 .se-track-label {
     font-size: 11px;
@@ -262,11 +305,19 @@
 }
 .se-timeline-track {
     position: relative;
-    height: 11px;
-    border-radius: 7px;
-    background: #f0f2f5;
+    height: 34px;
     cursor: pointer;
     touch-action: none;
+}
+.se-timeline-track:before {
+    content: '';
+    position: absolute;
+    top: 17px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #edf0f4;
+    pointer-events: none;
 }
 .se-timeline-track[aria-disabled='true'] {
     cursor: default;
@@ -274,42 +325,50 @@
 .se-media-range,
 .se-temporal-window {
     position: absolute;
-    top: 0;
-    height: 100%;
-    border-radius: 6px;
+    top: 16px;
+    height: 2px;
+    border-radius: 2px;
     pointer-events: none;
 }
 .se-media-range {
-    background: #e0e5ea;
+    background: #d5dbe4;
 }
 .se-temporal-window {
-    background: #d7ecbb;
+    top: 15px;
+    height: 4px;
+    background: #efd4bc;
 }
 .se-temporal-window.caution {
     opacity: 0.65;
-    border: 1px dashed #8ca56e;
+    border: 1px dashed #c08f63;
 }
 .se-temporal-peak,
 .se-playhead {
     position: absolute;
     z-index: 2;
-    width: 2px;
-    top: -4px;
-    height: 19px;
+    width: 1px;
+    top: 8px;
+    height: 18px;
     pointer-events: none;
     transform: translateX(-1px);
 }
 .se-temporal-peak {
-    background: #7da047;
+    top: 12px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid white;
+    outline: 1px solid #e7a266;
+    background: #e7a266;
+    transform: translateX(-50%);
 }
-.se-temporal-peak:before,
 .se-playhead:before {
     content: '';
     position: absolute;
     left: -2px;
     top: -2px;
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: inherit;
 }
@@ -347,10 +406,10 @@
     border-radius: 2px;
 }
 .se-legend-range {
-    background: #e0e5ea;
+    background: #d5dbe4;
 }
 .se-legend-focus {
-    background: #d7ecbb;
+    background: #efd4bc;
 }
 .se-player:fullscreen {
     background: var(--canvas, #f4f5f7);
@@ -396,17 +455,13 @@
         flex-wrap: wrap;
         gap: 5px;
     }
-    .se-tools input[type='range'] {
-        order: 2;
-        flex-basis: 100%;
-    }
     .se-tools .se-time {
         margin-right: auto;
     }
-    .se-timeline-row {
-        grid-template-columns: 45px minmax(0, 1fr) 91px;
-        gap: 6px;
-        padding: 7px 8px;
+    .se-timeline-panel {
+        --se-label-width: 45px;
+        --se-time-width: 91px;
+        --se-track-gap: 6px;
     }
     .se-track-time {
         font-size: 9px;
@@ -423,43 +478,4 @@
     .se-focus-region {
         transition: none;
     }
-}
-
-/* Track progress follows the measured common time, including shared seeks. */
-.se-tools input[type='range']::-webkit-slider-runnable-track {
-    height: 4px;
-    border-radius: 4px;
-    background: linear-gradient(
-        to right,
-        var(--lime) 0 var(--se-progress, 0%),
-        #596577 var(--se-progress, 0%) 100%
-    );
-}
-.se-tools input[type='range']::-webkit-slider-thumb {
-    appearance: none;
-    width: 12px;
-    height: 12px;
-    margin-top: -4px;
-    border: 0;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-}
-.se-tools input[type='range']::-moz-range-track {
-    height: 4px;
-    border-radius: 4px;
-    background: #596577;
-}
-.se-tools input[type='range']::-moz-range-progress {
-    height: 4px;
-    border-radius: 4px;
-    background: var(--lime);
-}
-.se-tools input[type='range']::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border: 0;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
 }
