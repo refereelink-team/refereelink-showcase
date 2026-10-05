@@ -1,13 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type {
   EvidenceValue,
-  ExplanationResponse,
   FoulFacts,
   FoulLocation,
   MultiviewDecision,
   ReviewPreview,
-  ReviewRecord,
-  ReviewState,
   RuleTraceEntry,
 } from '../../types/multiview';
 import FoulLocationPitch from './FoulLocationPitch';
@@ -16,12 +13,13 @@ import type { FactName } from './reviewFacts';
 import {
   attemptRelevant,
   contextRelevant,
+  confirmGuidePage,
   guideStepForFact,
   nextGuideStep,
   pageAdoptableFields,
-  reviewSaveState,
+  pageReviewPresets,
 } from './reviewGuideFlow';
-import type { ReviewGuideStep } from './reviewGuideFlow';
+import type { ReviewGuideStep, ReviewPreset } from './reviewGuideFlow';
 import './review-guide.css';
 
 export interface ReviewGuideProps {
@@ -34,24 +32,14 @@ export interface ReviewGuideProps {
   decision: MultiviewDecision | null;
   newModelFields?: readonly FactName[];
   prefillToken?: string | number | null;
-  record: ReviewRecord | null;
+  protectedFields?: readonly FactName[];
   busy: boolean;
   disabled: boolean;
-  isDirty: boolean;
   onChange: (facts: FoulFacts, field?: FactName) => void;
   onAdopt: (fields: readonly FactName[]) => void;
   onLocationChange: (location: FoulLocation | null) => void;
-  onSave: (state: ReviewState) => void;
-  onReload: () => void;
-  onRestore: () => void;
-  explanation: ExplanationResponse | null;
-  onExplain: () => void;
-  explanationBusy: boolean;
   onRetryPreview?: () => void;
-  history?: readonly ReviewRecord[];
-  historyLoading?: boolean;
-  historyError?: string | null;
-  onLoadHistory?: () => void;
+  onReset: () => void;
 }
 
 interface Choice {
@@ -84,19 +72,13 @@ const restartLabels: Record<string, string> = {
   indirect_free_kick: '间接任意球',
   penalty: '罚球点球',
   previous_restart: '维持原恢复方式',
-  unknown: '待确认',
+  unknown: '信息不足',
 };
 const sanctionLabels: Record<string, string> = {
   none: '不出牌',
   yellow_card: '黄牌',
   red_card: '红牌',
-  pending: '待确认',
-};
-const stateLabels: Record<ReviewState, string> = {
-  pending: '待复核',
-  reviewed: '已确认',
-  archived: '已归档',
-  uncertain: '待确认',
+  pending: '信息不足',
 };
 const headings: Record<ReviewGuideStep, { title: string; description: string; eyebrow: string }> = {
   action: { title: '这个动作是否构成犯规？', description: '', eyebrow: '核心判断 · 1 / 2' },
@@ -111,7 +93,7 @@ const headings: Record<ReviewGuideStep, { title: string; description: string; ey
     description: '不确定的内容可以留空。',
     eyebrow: '补充 · 情境',
   },
-  result: { title: '判罚建议', description: '', eyebrow: '复核结果' },
+  result: { title: '判罚建议', description: '', eyebrow: '演示结果' },
 };
 const labelFact = (name: string) => factLabels[name as keyof FoulFacts] ?? name;
 
@@ -125,6 +107,7 @@ function Choices({
   onChange,
   animate,
   compact = false,
+  suggestionNote = '历史推导 · 点击选项确认',
 }: {
   name: FactName;
   title: string;
@@ -135,6 +118,7 @@ function Choices({
   onChange: (raw: string) => void;
   animate: boolean;
   compact?: boolean;
+  suggestionNote?: string;
 }) {
   const id = useId();
   const raw = fact.value === null ? '' : String(fact.value);
@@ -150,7 +134,7 @@ function Choices({
       <legend>{title}</legend>
       <div className={`rg-choices${compact ? ' rg-choices-compact' : ''}`}>
         {[...choices, unknown].map((choice) => {
-          const selected = choice.value === '' ? !confirmed : confirmed && raw === choice.value;
+          const selected = raw === choice.value;
           const isRecommendation =
             choice.value !== '' &&
             recommendation.source === 'model' &&
@@ -168,8 +152,8 @@ function Choices({
                 value={choice.value}
                 checked={selected}
                 onClick={() => {
-                  // An explicit unknown choice also clears an unaccepted suggestion.
-                  if (choice.value === '' && !confirmed) onChange('');
+                  // Clicking an already preselected suggestion is still an explicit human choice.
+                  if (selected && !confirmed) onChange(choice.value);
                 }}
                 onChange={() => onChange(choice.value)}
               />
@@ -189,19 +173,140 @@ function Choices({
         })}
       </div>
       {suggested && fact.source !== 'model' && supported && (
-        <p className="rg-source-note">历史推导 · 点击选项确认</p>
+        <p className="rg-source-note">{suggestionNote}</p>
       )}
-      {suggested && !supported && <p className="rg-source-note">建议值“{raw}”待人工复核</p>}
+      {suggested && fact.source === 'model' && supported && (
+        <p className="rg-source-note">AI 建议 · 确认并继续时采纳</p>
+      )}
+      {suggested && !supported && <p className="rg-source-note">建议值“{raw}”需人工判断</p>}
       {confirmed && (
         <p className="rg-source-note">
           {fact.source === 'model'
             ? 'AI 建议 · 已采纳'
             : fact.source === 'human'
-              ? '人工确认'
-              : '已确认'}
+              ? '人工选择'
+              : '已选择'}
         </p>
       )}
     </fieldset>
+  );
+}
+
+type SummaryName = 'offence_confirmed' | 'intensity' | 'contact' | 'ball_in_play';
+const summaryChoices: Record<SummaryName, { label: string; choices: readonly Choice[] }> = {
+  offence_confirmed: {
+    label: '犯规判断',
+    choices: [
+      { value: 'true', label: '犯规成立' },
+      { value: 'false', label: '不构成犯规' },
+    ],
+  },
+  intensity: {
+    label: '动作强度',
+    choices: [
+      { value: 'careless', label: '草率', detail: '缺乏注意或考虑' },
+      { value: 'reckless', label: '鲁莽', detail: '漠视对对手的危险或后果' },
+      { value: 'excessive_force', label: '过分力量', detail: '超出必要力量，危及对手安全' },
+    ],
+  },
+  contact: {
+    label: '接触情况',
+    choices: [
+      { value: 'true', label: '有接触' },
+      { value: 'false', label: '无接触' },
+    ],
+  },
+  ball_in_play: {
+    label: '比赛状态',
+    choices: [
+      { value: 'true', label: '比赛进行中' },
+      { value: 'false', label: '死球 / 比赛已停止' },
+    ],
+  },
+};
+
+function ReviewSummary({
+  name,
+  fact,
+  recommendation,
+  preset,
+  disabled,
+  onChange,
+}: {
+  name: SummaryName;
+  fact: EvidenceValue;
+  recommendation: EvidenceValue;
+  preset?: ReviewPreset;
+  disabled: boolean;
+  onChange: (raw: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const contact = name === 'contact';
+  const { label, choices } = summaryChoices[name];
+  const displayed = preset
+    ? { value: true, source: 'rule' as const, confidence: null, confirmed: false }
+    : fact;
+  const selected = choices.find((choice) => choice.value === String(displayed.value));
+  const compact =
+    Boolean(selected) && (Boolean(preset) || displayed.confirmed || displayed.source === 'model');
+  const note = preset
+    ? preset.explanation
+    : name === 'ball_in_play' && displayed.value === false
+      ? '死球时仍可能出牌；恢复比赛方式维持原决定。'
+      : selected?.detail;
+  return (
+    <div className="rg-condition">
+      {compact && (
+        <div className="rg-condition-summary">
+          <div>
+            <span className="rg-condition-label">{label}</span>
+            <strong>{selected?.label}</strong>
+            <span className="rg-condition-source">
+              {preset
+                ? '预设'
+                : displayed.source === 'model'
+                  ? displayed.confirmed
+                    ? 'AI · 已采纳'
+                    : 'AI 建议'
+                  : displayed.source === 'human'
+                    ? '人工选择'
+                    : '已选择'}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={`${expanded ? '收起' : '更改'}${label}`}
+            aria-expanded={expanded}
+            aria-controls={id}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? '收起' : '更改'}
+          </button>
+        </div>
+      )}
+      {note && <p className="rg-source-note">{note}</p>}
+      <div id={id} hidden={compact && !expanded}>
+        {(!compact || expanded) && (
+          <>
+            <Choices
+              name={name}
+              title={label}
+              fact={displayed}
+              recommendation={recommendation}
+              choices={choices}
+              disabled={disabled}
+              onChange={onChange}
+              animate={false}
+              compact
+              suggestionNote={preset ? '演示预设 · 确认并继续时采纳' : undefined}
+            />
+            {contact && <p className="rg-source-note">无接触也可能构成危险动作等犯规。</p>}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -249,10 +354,10 @@ function ActionChooser({
                 {fact.source === 'model'
                   ? fact.confirmed
                     ? 'AI · 已采纳'
-                    : 'AI · 待确认'
+                    : 'AI 建议'
                   : fact.confirmed
-                    ? '人工确认'
-                    : '历史建议'}
+                    ? '人工选择'
+                    : '建议'}
               </span>
             )}
           </span>
@@ -315,24 +420,14 @@ export default function ReviewGuide({
   decision,
   newModelFields = [],
   prefillToken,
-  record,
+  protectedFields = [],
   busy,
   disabled,
-  isDirty,
   onChange,
   onAdopt,
   onLocationChange,
-  onSave,
-  onReload,
-  onRestore,
-  explanation,
-  onExplain,
-  explanationBusy,
   onRetryPreview,
-  history = [],
-  historyLoading = false,
-  historyError = null,
-  onLoadHistory,
+  onReset,
 }: ReviewGuideProps) {
   const [showAllScenarios, setShowAllScenarios] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState(false);
@@ -373,16 +468,15 @@ export default function ReviewGuide({
   const showAttempt = attemptRelevant(facts);
   const showContext = !noOffence && !dive && contextRelevant(facts);
   const adoptable = pageAdoptableFields(step, facts, expandedDetails);
+  const presetOptions = { protectedFields };
+  const presets = pageReviewPresets(step, facts, presetOptions);
+  const coreStep = step === 'action' || step === 'severity';
+  const hasPageSuggestions = adoptable.length > 0 || presets.length > 0;
   const heading =
     dive && step === 'severity'
-      ? { ...headings.severity, title: '比赛当时是否仍在进行？' }
+      ? { ...headings.severity, title: '确认假摔的比赛情境' }
       : headings[step];
   const usablePreview = preview && !previewError && !previewLoading;
-  const saveDisabled = disabled || busy || !usablePreview;
-  const currentExplanation =
-    !isDirty && record && preview?.can_finalize && explanation?.revision === record.revision
-      ? explanation
-      : null;
   const backStep: ReviewGuideStep =
     step === 'severity'
       ? 'action'
@@ -420,85 +514,40 @@ export default function ReviewGuide({
   function next() {
     onStepChange(nextGuideStep(step, facts));
   }
+  function confirmAndNext() {
+    const confirmed = confirmGuidePage(step, facts, presetOptions, expandedDetails);
+    if (confirmed !== facts) onChange(confirmed);
+    onStepChange(nextGuideStep(step, confirmed));
+  }
+  function summary(name: SummaryName) {
+    return (
+      <ReviewSummary
+        key={`${name}:${facts.action.value ?? ''}`}
+        name={name}
+        fact={facts[name]}
+        recommendation={recommendations[name]}
+        preset={presets.find((preset) => preset.name === name)}
+        disabled={disabled || busy}
+        onChange={(raw) => onChange(setHumanFact(facts, name, raw), name)}
+      />
+    );
+  }
 
   return (
-    <section className="rg-guide" aria-label="引导式判罚复核" aria-busy={busy}>
+    <section className="rg-guide" aria-label="引导式判罚演示" aria-busy={busy}>
       <header className="rg-header">
         <div className="rg-header-line">
-          <strong>判罚复核</strong>
-          <details className="rg-more">
-            <summary aria-label="更多复核操作">···</summary>
-            <div className="rg-more-menu">
-              {record && (
-                <p>
-                  {stateLabels[record.review_state]} · 版本 {record.revision}
-                </p>
-              )}
-              <button type="button" disabled={busy} onClick={onReload}>
-                重新加载记录
-              </button>
-              <button type="button" disabled={disabled || busy} onClick={() => onSave('pending')}>
-                保存草稿
-              </button>
-              <button type="button" disabled={disabled || busy} onClick={() => onSave('uncertain')}>
-                保存为待确认
-              </button>
-              <button type="button" disabled={busy || !isDirty} onClick={onRestore}>
-                恢复已保存内容
-              </button>
-              {onLoadHistory && (
-                <details
-                  className="rg-history"
-                  onToggle={(event) => {
-                    if (event.currentTarget.open) onLoadHistory();
-                  }}
-                >
-                  <summary>历史记录</summary>
-                  <div className="rg-history-list">
-                    {historyLoading && <p role="status">正在读取…</p>}
-                    {historyError && <p role="alert">{historyError}</p>}
-                    {!historyLoading && !historyError && !history.length && <p>暂无保存记录</p>}
-                    {history.map((item) => (
-                      <details key={item.revision}>
-                        <summary>
-                          版本 {item.revision} · {stateLabels[item.review_state]}
-                        </summary>
-                        <p>{new Date(item.updated_at).toLocaleString('zh-CN')}</p>
-                        <p>
-                          {actions.find((choice) => choice.value === item.facts.action.value)
-                            ?.label ??
-                            item.facts.action.value ??
-                            '动作未填写'}
-                        </p>
-                        <p>
-                          {restartLabels[item.assessment.restart]} ·{' '}
-                          {sanctionLabels[item.assessment.sanction]}
-                        </p>
-                        {item.facts.location && (
-                          <p>
-                            位置 {item.facts.location.x_m.toFixed(1)},{' '}
-                            {item.facts.location.y_m.toFixed(1)} m
-                          </p>
-                        )}
-                        <p>{item.assessment.explanation_template}</p>
-                      </details>
-                    ))}
-                  </div>
-                </details>
-              )}
-              {record && (
-                <button
-                  type="button"
-                  disabled={disabled || busy}
-                  onClick={() => onSave('archived')}
-                >
-                  归档
-                </button>
-              )}
-            </div>
-          </details>
+          <strong>判罚演示</strong>
+          <button
+            type="button"
+            className="rg-text-button"
+            disabled={disabled || busy}
+            onClick={onReset}
+          >
+            重新开始
+          </button>
         </div>
-        <nav className="rg-progress" aria-label="复核进度">
+        <nav className="rg-progress" aria-label="演示步骤">
           <button
             type="button"
             className={step === 'action' || step === 'severity' ? 'current' : ''}
@@ -541,18 +590,19 @@ export default function ReviewGuide({
             <span>
               <i aria-hidden="true">✦</i> AI 建议
             </span>
-            <button type="button" disabled={disabled || busy} onClick={() => onAdopt(adoptable)}>
-              采纳本页建议
-            </button>
+            {coreStep ? (
+              <span>已预选 · 确认并继续时采纳</span>
+            ) : (
+              <button type="button" disabled={disabled || busy} onClick={() => onAdopt(adoptable)}>
+                采纳本页建议
+              </button>
+            )}
           </div>
         )}
 
         {step === 'action' && (
           <>
-            {field('offence_confirmed', '确认事件', [
-              { value: 'true', label: '犯规成立' },
-              { value: 'false', label: '不构成犯规' },
-            ])}
+            {summary('offence_confirmed')}
             {!noOffence && (
               <>
                 <ActionChooser
@@ -566,38 +616,19 @@ export default function ReviewGuide({
                   }
                   onChange={(raw) => onChange(setHumanFact(facts, 'action', raw), 'action')}
                 />
-                {!dive && field('contact', '是否发生接触？', yesNo, true)}
+                {!dive && summary('contact')}
               </>
             )}
           </>
         )}
         {step === 'severity' && (
           <>
-            {!dive &&
-              !noOffence &&
-              field('intensity', '动作强度', [
-                { value: 'careless', label: '草率', detail: '缺乏注意或考虑' },
-                { value: 'reckless', label: '鲁莽', detail: '漠视对对手的危险或后果' },
-                {
-                  value: 'excessive_force',
-                  label: '过分力量',
-                  detail: '超出必要力量，危及对手安全',
-                },
-              ])}
-            {!noOffence &&
-              field(
-                'ball_in_play',
-                dive ? '球是否在比赛中？' : '比赛当时是否仍在进行？',
-                [
-                  { value: 'true', label: '比赛进行中' },
-                  { value: 'false', label: '已停止比赛' },
-                ],
-                true,
-              )}
+            {!dive && !noOffence && summary('intensity')}
+            {!noOffence && summary('ball_in_play')}
             {noOffence && (
               <p className="rg-note">
                 {facts.offence_confirmed.confirmed
-                  ? '已确认不构成犯规，可以直接查看建议。'
+                  ? '已选择不构成犯规，可以直接查看建议。'
                   : '不犯规建议尚未采纳，查看结果时仍会保留为未知。'}
               </p>
             )}
@@ -614,7 +645,6 @@ export default function ReviewGuide({
                   geometry={previewLoading ? null : (preview?.assessment.geometry ?? null)}
                   offenderTeam={facts.offender_team}
                   homeDefendsSide={facts.home_defends_side}
-                  dirty={isDirty}
                   disabled={disabled || busy}
                   compact
                   onChange={onLocationChange}
@@ -803,30 +833,14 @@ export default function ReviewGuide({
                   </details>
                 )}
                 {!preview.can_finalize && (
-                  <p className="rg-save-note">未确认的信息会保留为空，当前进度可保存为待确认。</p>
+                  <p className="rg-note">补充关键信息后，条件建议会收敛为确定判罚。</p>
                 )}
                 <details className="rg-evidence-details">
                   <summary>查看依据与分析详情</summary>
                   {preview.can_finalize && (
                     <section className="rg-detail-section">
                       <h3>判罚说明</h3>
-                      <p>
-                        {currentExplanation?.summary ?? preview.assessment.explanation_template}
-                      </p>
-                      {record && !isDirty && (
-                        <button
-                          type="button"
-                          className="rg-text-button"
-                          disabled={busy || explanationBusy}
-                          onClick={onExplain}
-                        >
-                          {explanationBusy
-                            ? '正在整理说明…'
-                            : currentExplanation
-                              ? '重新生成说明'
-                              : '生成 AI 说明'}
-                        </button>
-                      )}
+                      <p>{preview.assessment.explanation_template}</p>
                     </section>
                   )}
                   {decision && (
@@ -888,17 +902,6 @@ export default function ReviewGuide({
                       <p className="rg-note">补充关键事实后显示适用条款。</p>
                     )}
                   </section>
-                  {record && (
-                    <section className="rg-detail-section">
-                      <h3>保存记录</h3>
-                      <p>
-                        {stateLabels[record.review_state]} · 版本 {record.revision}
-                      </p>
-                      <p className="rg-detail-version">
-                        {new Date(record.updated_at).toLocaleString('zh-CN')}
-                      </p>
-                    </section>
-                  )}
                 </details>
               </>
             )}
@@ -918,15 +921,29 @@ export default function ReviewGuide({
           </button>
         )}
         <div className="rg-footer-primary">
-          {step === 'action' && (
-            <button type="button" className="rg-primary" disabled={busy} onClick={next}>
-              {noOffence && facts.offence_confirmed.confirmed ? '查看建议' : '下一步'}
-            </button>
-          )}
-          {step === 'severity' && (
-            <button type="button" className="rg-primary" disabled={busy} onClick={next}>
-              {nextGuideStep(step, facts) === 'result' ? '查看建议' : '下一步'}
-            </button>
+          {coreStep && (
+            <>
+              {hasPageSuggestions && (
+                <p className="rg-confirm-note">确认将采纳本页预选项与预设条件。</p>
+              )}
+              <button
+                type="button"
+                className="rg-primary"
+                disabled={disabled || busy}
+                onClick={hasPageSuggestions ? confirmAndNext : next}
+              >
+                {hasPageSuggestions
+                  ? '确认并继续'
+                  : nextGuideStep(step, facts) === 'result'
+                    ? '查看建议'
+                    : '下一步'}
+              </button>
+              {hasPageSuggestions && (
+                <button type="button" className="rg-secondary" disabled={busy} onClick={next}>
+                  跳过预选，下一步
+                </button>
+              )}
+            </>
           )}
           {step === 'location' && (
             <>
@@ -966,10 +983,10 @@ export default function ReviewGuide({
             <button
               type="button"
               className="rg-primary"
-              disabled={saveDisabled}
-              onClick={() => onSave(reviewSaveState(preview))}
+              disabled={disabled || busy}
+              onClick={onReset}
             >
-              {busy ? '正在保存…' : preview?.can_finalize ? '确认并保存' : '保存为待确认'}
+              重新判罚
             </button>
           )}
         </div>

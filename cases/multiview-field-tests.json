@@ -1,0 +1,314 @@
+{
+  "description": "Prepared paired-camera cases selected by the reviewer. Paths resolve from the showcase repository; video files remain outside Git.",
+  "cases": [
+    {
+      "case_id": "manual-20261004-02-01",
+      "title": "实地测试案例1",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "01",
+      "description": "人工指定片段：原案例2，第一机位 27.05 秒，原片范围 24.55–29.55 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-01/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -17,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-01/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -15,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    },
+    {
+      "case_id": "manual-20261004-03-01",
+      "title": "实地测试案例2",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "02",
+      "description": "人工指定片段：原案例3，第一机位 15.52 秒，原片范围 13.02–18.02 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-02/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -31,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-02/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -27,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    },
+    {
+      "case_id": "manual-20261004-04-01",
+      "title": "实地测试案例3",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "03",
+      "description": "人工指定片段：原案例4，第一机位 23.51 秒，原片范围 21.01–26.01 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-03/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -48,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-03/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -3,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    },
+    {
+      "case_id": "manual-20261004-04-02",
+      "title": "实地测试案例4",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "04",
+      "description": "人工指定片段：原案例4，第一机位 67.94 秒，原片范围 65.44–70.44 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-04/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -3,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-04/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -20,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    },
+    {
+      "case_id": "manual-20261004-05-01",
+      "title": "实地测试案例5",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "05",
+      "description": "人工指定片段：原案例5，第一机位 33.63 秒，原片范围 31.13–36.13 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-05/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -2,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-05/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -30,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    },
+    {
+      "case_id": "manual-20261004-05-02",
+      "title": "实地测试案例6",
+      "match_name": "2026-10-04 实地双机位测试",
+      "match_clock": "06",
+      "description": "人工指定片段：原案例5，第一机位 73.49 秒，原片范围 70.99–75.99 秒。",
+      "event_time_s": 2.5,
+      "review_state": "pending",
+      "risk_level": "medium",
+      "zone": "未知区域",
+      "videos": [
+        {
+          "camera_id": "rtsp_1",
+          "display_name": "第1机位",
+          "role": "main",
+          "path": "runtime/media/multiview/field-test-06/camera-1.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -17,
+          "quality": "人工指定时间 · 双机位片段"
+        },
+        {
+          "camera_id": "rtsp_2",
+          "display_name": "第2机位",
+          "role": "side",
+          "path": "runtime/media/multiview/field-test-06/camera-2.mp4",
+          "preview_path": null,
+          "sync_offset_ms": -21,
+          "quality": "人工指定时间 · 双机位片段"
+        }
+      ],
+      "scripted_result": null,
+      "evidence_notes": [
+        "人工指定时间裁切，前后各取 2.5 秒。",
+        "两路按原有场景估计偏移配对；保留帧边界时间差，尚未完成精确标记和漂移校准。",
+        "待人工复核，未预填模型判罚或犯规事实。"
+      ],
+      "capture_state": "capture_ready"
+    }
+  ],
+  "video_case_labels": {
+    "soccernet_action_183": "视频测试案例1",
+    "soccernet_action_2": "视频测试案例2",
+    "soccernet_action_78": "视频测试案例3",
+    "soccernet_action_144": "视频测试案例4",
+    "live-20261001T160319Z-29574458": "视频测试案例5"
+  },
+  "media_files": [
+    {
+      "path": "runtime/media/multiview/field-test-01/camera-1.mp4",
+      "sha256": "0cbf090d1b6587de2d36adb4790f394ffc20e05fe5bcbf239b46e7d0aaedfc89",
+      "size_bytes": 4254211,
+      "duration_s": 5.003
+    },
+    {
+      "path": "runtime/media/multiview/field-test-01/camera-2.mp4",
+      "sha256": "2a49666d83e9fd5ec646ea17016f78cad7f5a90f3777fae8dddfe7b18ffa47fb",
+      "size_bytes": 4662904,
+      "duration_s": 5.006
+    },
+    {
+      "path": "runtime/media/multiview/field-test-02/camera-1.mp4",
+      "sha256": "8181d58c24316eac69bb66e16977e239f7f64be2df66aca7af8b05625166ab15",
+      "size_bytes": 4528382,
+      "duration_s": 5.002
+    },
+    {
+      "path": "runtime/media/multiview/field-test-02/camera-2.mp4",
+      "sha256": "faea829fb8605dcc40f01848ebbbddd33eebd96f77f129bb23aced6969800559",
+      "size_bytes": 4905312,
+      "duration_s": 5.002
+    },
+    {
+      "path": "runtime/media/multiview/field-test-03/camera-1.mp4",
+      "sha256": "a1d190b85791c23678733f9b450ffa1b31c82c2f012e162cbe698b45aa287f90",
+      "size_bytes": 4488607,
+      "duration_s": 4.963
+    },
+    {
+      "path": "runtime/media/multiview/field-test-03/camera-2.mp4",
+      "sha256": "7cbe313550dc83687ab77fa29ef00906486394038ff67501b67426786586ea1a",
+      "size_bytes": 4831956,
+      "duration_s": 5.002
+    },
+    {
+      "path": "runtime/media/multiview/field-test-04/camera-1.mp4",
+      "sha256": "bebbe5f30b63d4a9a78fe2fd74302c4178898fbdfec748006c428de8c7033a61",
+      "size_bytes": 4329656,
+      "duration_s": 5.024
+    },
+    {
+      "path": "runtime/media/multiview/field-test-04/camera-2.mp4",
+      "sha256": "7eb2f12de19a5c678bf7f0acf3b7a8c80bbe8b2f4a7ffd0ac942a4fce92affdc",
+      "size_bytes": 4758893,
+      "duration_s": 5.002
+    },
+    {
+      "path": "runtime/media/multiview/field-test-05/camera-1.mp4",
+      "sha256": "7e4a76664b4653060ee1e89c0217a7a06b45b3a4a6fb050b0a17bafcde44b86c",
+      "size_bytes": 4513874,
+      "duration_s": 5.036
+    },
+    {
+      "path": "runtime/media/multiview/field-test-05/camera-2.mp4",
+      "sha256": "13e32a453e57c11dc86140c7dc5b20ff92c259ecce5134a6714af08ed7c6e5f2",
+      "size_bytes": 4804132,
+      "duration_s": 4.998
+    },
+    {
+      "path": "runtime/media/multiview/field-test-06/camera-1.mp4",
+      "sha256": "d8922324f9b84c9c3e86799ac47636debea6c7cb08da2fcd51019120bf627e78",
+      "size_bytes": 3783514,
+      "duration_s": 5.036
+    },
+    {
+      "path": "runtime/media/multiview/field-test-06/camera-2.mp4",
+      "sha256": "147eb185ea679555d39ac74948653bb0739853e9f9fbe1a834c2c3b98929c0a9",
+      "size_bytes": 4017436,
+      "duration_s": 4.996
+    }
+  ]
+}

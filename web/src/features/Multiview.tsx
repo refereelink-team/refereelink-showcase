@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Catalog } from '../types';
-import type { MultiviewCase, ReviewState } from '../types/multiview';
+import type { MultiviewCase } from '../types/multiview';
 import { api, mediaUrl, request } from '../api';
 import { useAction, useResource } from '../hooks';
 import { Alert, Empty, Footer, Modes, PageHeader, Icon } from '../components/UI';
@@ -12,14 +12,6 @@ import { adoptModelFields } from '../components/multiview/reviewGuideFlow';
 import { useMultiviewReview } from './useMultiviewReview';
 import './multiview.css';
 
-const stateLabels: Record<ReviewState, string> = {
-  pending: '待复核',
-  reviewed: '已复核',
-  uncertain: '待确认',
-  archived: '已归档',
-};
-const filters = ['all', 'pending', 'reviewed', 'uncertain', 'archived'] as const;
-type Filter = (typeof filters)[number];
 const noMedia: EvidenceReadiness = {
   allVideosReady: false,
   playableVideoCount: 0,
@@ -113,33 +105,11 @@ export default function Multiview({
   const [mode, setMode] = useState<'video' | 'live'>('video');
   const [selection, setSelection] = useState(linkedCase);
   const [cases, setCases] = useState<MultiviewCase[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [readiness, setReadiness] = useState(noMedia);
-  const [focusRequest, setFocusRequest] = useState<{
-    token: string | number;
-    commonTimeS: number;
-  }>();
-  const [attentionAnalysis, setAttentionAnalysis] = useState<{
-    caseId: string;
-    analysisId: string;
-  }>();
-  const status = useResource(api.multiviewStatus, 15000);
-  const workflow = useMultiviewReview(selection);
-  const current = cases.find((c) => c.case_id === selection);
   useEffect(() => {
     if (!catalog) return;
-    setCases((previous) =>
-      catalog.cases.map((item) => ({
-        ...item,
-        review_state:
-          workflow.states[item.case_id]?.state ??
-          previous.find((c) => c.case_id === item.case_id)?.review_state ??
-          item.review_state,
-        review_revision: workflow.states[item.case_id]?.revision ?? item.review_revision,
-      })),
-    );
+    setCases(catalog.cases);
     setSelection((value) => value || catalog.cases[0]?.case_id || '');
-  }, [catalog, workflow.states]);
+  }, [catalog]);
   useEffect(() => {
     const restore = () => {
       const id = linkedCase();
@@ -153,18 +123,59 @@ export default function Multiview({
     const url = new URL(window.location.href);
     url.searchParams.set('case', selection);
     window.history.replaceState(null, '', url);
-    setReadiness(noMedia);
-    setFocusRequest(undefined);
-    setAttentionAnalysis(undefined);
   }, [selection]);
-  function choose(id: string) {
+  async function capture(id: string) {
+    const result = await request<{ cases: MultiviewCase[] }>('/api/multiview/cases');
+    setCases(result.cases);
     setSelection(id);
+    setMode('video');
+    await reload();
+  }
+  return (
+    <DemoWorkbench
+      key={selection}
+      selection={selection}
+      cases={cases}
+      mode={mode}
+      onModeChange={setMode}
+      onChoose={setSelection}
+      onCapture={capture}
+    />
+  );
+}
+
+// Remounting the entire case workspace clears facts, results, guide UI and pending requests.
+function DemoWorkbench({
+  selection,
+  cases,
+  mode,
+  onModeChange,
+  onChoose,
+  onCapture,
+}: {
+  selection: string;
+  cases: MultiviewCase[];
+  mode: 'video' | 'live';
+  onModeChange: (mode: 'video' | 'live') => void;
+  onChoose: (id: string) => void;
+  onCapture: (id: string) => Promise<void>;
+}) {
+  const [readiness, setReadiness] = useState(noMedia);
+  const [focusRequest, setFocusRequest] = useState<{
+    token: string | number;
+    commonTimeS: number;
+  }>();
+  const status = useResource(api.multiviewStatus, 15000);
+  const workflow = useMultiviewReview(selection);
+  const current = cases.find((c) => c.case_id === selection);
+  function reset() {
+    setFocusRequest(undefined);
+    workflow.reset();
   }
   async function analyze() {
     // Preserve the last successful attribution while a retry is pending or fails.
     const result = await workflow.analyze();
     if (result && current) {
-      setAttentionAnalysis({ caseId: current.case_id, analysisId: result.analysis_id });
       const commonTimeS = decisionFocusTime(current, result);
       setFocusRequest(
         commonTimeS === null ? undefined : { token: result.analysis_id, commonTimeS },
@@ -173,23 +184,12 @@ export default function Multiview({
   }
   async function capture(id: string) {
     try {
-      const result = await request<{ cases: MultiviewCase[] }>('/api/multiview/cases');
-      setCases(result.cases);
-      setSelection(id);
-      setMode('video');
-      await reload();
+      await onCapture(id);
     } catch (error) {
       workflow.showError(error);
     }
   }
   const decision = workflow.decision;
-  // Historical analyses remain available for review, but playback focus requires a new analysis.
-  const attentionDecision =
-    attentionAnalysis?.caseId === selection &&
-    attentionAnalysis.analysisId === decision?.analysis_id
-      ? decision
-      : null;
-  const visible = cases.filter((c) => filter === 'all' || c.review_state === filter);
   const modelReady =
     status.data?.ready && status.data.cuda_available && status.data.mode === 'model';
   const mediaReason = !current
@@ -209,7 +209,7 @@ export default function Multiview({
         ? `CUDA 模型尚未就绪${status.data?.missing.length ? '：' + status.data.missing.join('、') : ''}`
         : '';
   const blockedReason = modelReason || mediaReason;
-  const editable = Boolean(current) && !workflow.loading && !workflow.saving;
+  const editable = Boolean(current);
   return (
     <>
       <div className="mv-workbench">
@@ -220,7 +220,7 @@ export default function Multiview({
               <Modes
                 label="输入模式"
                 value={mode}
-                onChange={setMode}
+                onChange={onModeChange}
                 options={[
                   { value: 'video', label: '视频' },
                   { value: 'live', label: '实时' },
@@ -234,8 +234,6 @@ export default function Multiview({
                 mode === 'live' ||
                 !current ||
                 workflow.analyzing ||
-                workflow.saving ||
-                workflow.loading ||
                 !modelReady ||
                 !readiness.allVideosReady
               }
@@ -249,7 +247,7 @@ export default function Multiview({
             message={workflow.error || status.error}
             onRetry={() => {
               void status.refresh();
-              void workflow.refresh();
+              workflow.retryPreview();
             }}
           />
           {mode === 'live' ? (
@@ -257,60 +255,32 @@ export default function Multiview({
           ) : (
             <>
               <section className="mv-case-queue" aria-label="案例队列">
-                <div className="mv-queue-heading">
-                  <label>
-                    复核状态
-                    <select
-                      aria-label="筛选复核状态"
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value as Filter)}
-                    >
-                      {filters.map((value) => (
-                        <option key={value} value={value}>
-                          {value === 'all' ? '全部' : stateLabels[value]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
                 <div className="mv-case-list">
-                  {visible.map((item) => {
-                    const number = cases.findIndex((c) => c.case_id === item.case_id) + 1;
+                  {cases.map((item) => {
                     return (
                       <button
                         key={item.case_id}
                         className={`mv-case-option ${item.case_id === selection ? 'selected' : ''}`}
                         aria-pressed={item.case_id === selection}
-                        onClick={() => choose(item.case_id)}
+                        onClick={() => onChoose(item.case_id)}
                       >
-                        <strong>案例 {number}</strong>
-                        <span>
-                          <i className={`mv-state-dot ${item.review_state}`} />
-                          {stateLabels[item.review_state]}
-                        </span>
+                        <strong>{item.title}</strong>
                       </button>
                     );
                   })}
                 </div>
-                {!visible.length && (
-                  <Empty compact>{cases.length ? '没有符合筛选条件的案例' : '正在加载案例'}</Empty>
-                )}
+                {!cases.length && <Empty compact>正在加载案例</Empty>}
               </section>
               {current ? (
                 <SynchronizedEvidencePlayer
                   key={current.case_id}
                   caseData={current}
-                  decision={attentionDecision}
+                  decision={decision}
                   onReadinessChange={setReadiness}
                   focusRequest={focusRequest}
                 />
               ) : (
                 <Empty>未找到该案例，请从队列重新选择</Empty>
-              )}
-              {workflow.notice && (
-                <p className="notice mv-notice" role="status">
-                  {workflow.notice}
-                </p>
               )}
               {blockedReason && (
                 <p className="quiet mv-readiness" role="status">
@@ -320,7 +290,7 @@ export default function Multiview({
             </>
           )}
         </main>
-        <aside className="mv-inspector" aria-label="判罚复核">
+        <aside className="mv-inspector" aria-label="判罚演示">
           {mode === 'video' ? (
             <ReviewGuide
               key={selection}
@@ -334,31 +304,21 @@ export default function Multiview({
               decision={decision}
               newModelFields={workflow.newModelFields}
               prefillToken={workflow.prefillToken}
-              record={workflow.review}
-              busy={workflow.loading || workflow.saving || workflow.analyzing}
+              protectedFields={workflow.protectedFields}
+              busy={workflow.analyzing}
               disabled={!editable || workflow.analyzing}
-              isDirty={workflow.dirty}
               onChange={workflow.edit}
               onAdopt={(fields) => workflow.edit(adoptModelFields(workflow.facts, fields))}
               onLocationChange={(location) => workflow.edit({ ...workflow.facts, location })}
-              onSave={(state) => void workflow.save(state)}
-              onReload={() => void workflow.refresh()}
-              onRestore={workflow.discard}
-              history={workflow.history}
-              historyLoading={workflow.historyLoading}
-              historyError={workflow.historyError}
-              onLoadHistory={() => void workflow.loadHistory()}
-              explanation={workflow.explanation}
-              onExplain={() => void workflow.explain()}
-              explanationBusy={workflow.explaining}
+              onReset={reset}
             />
           ) : (
-            <Empty compact>捕获回放后复核</Empty>
+            <Empty compact>捕获回放后开始判罚演示</Empty>
           )}
         </aside>
       </div>
       <Footer>
-        {mode === 'live' ? '现场输入 · 设备状态来自后端' : '视频案例 · 模型建议与人工复核分别记录'}
+        {mode === 'live' ? '现场输入 · 设备状态来自后端' : '案例演示 · 切换案例后重新开始判罚'}
       </Footer>
     </>
   );

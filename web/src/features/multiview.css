@@ -19,27 +19,6 @@
 .mv-case-queue {
     margin-bottom: 18px;
 }
-.mv-queue-heading {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    margin-bottom: 10px;
-    font-size: 12px;
-    color: var(--muted);
-}
-.mv-queue-heading label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    white-space: nowrap;
-}
-.mv-queue-heading select {
-    min-height: 30px;
-    width: auto;
-    padding: 3px 24px 3px 8px;
-    font-size: 12px;
-}
 .mv-case-list {
     display: flex;
     gap: 8px;
@@ -58,35 +37,11 @@
 .mv-case-option strong {
     display: block;
     font-size: 13px;
-    margin-bottom: 3px;
-}
-.mv-case-option span {
-    font-size: 11px;
-    color: var(--muted);
-    display: flex;
-    align-items: center;
-    gap: 5px;
 }
 .mv-case-option.selected {
     border-color: #7aa92e;
     background: #f7fbea;
     box-shadow: inset 0 0 0 1px #7aa92e;
-}
-.mv-state-dot {
-    display: inline-block;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #9aa3b4;
-}
-.mv-state-dot.pending {
-    background: #a0c64c;
-}
-.mv-state-dot.uncertain {
-    background: #d39f2e;
-}
-.mv-state-dot.reviewed {
-    background: #468a78;
 }
 .mv-inspector {
     border: 1px solid var(--border);
@@ -326,9 +281,6 @@
         min-width: 86px;
         max-width: none;
         padding: 8px 10px;
-    }
-    .mv-queue-heading {
-        font-size: 11px;
     }
 }
 

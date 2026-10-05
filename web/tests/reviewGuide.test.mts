@@ -5,14 +5,15 @@ import {
   adoptModelFields,
   attemptRelevant,
   contextRelevant,
+  confirmGuidePage,
   guideStepForFact,
   nextGuideStep,
   normalizeLegacyDerivedFacts,
   pageAdoptableFields,
-  reviewSaveState,
+  pageReviewPresets,
 } from '../src/components/multiview/reviewGuideFlow.ts';
 import { ReviewRequestScope } from '../src/features/reviewRequestScope.ts';
-import type { EvidenceValue, FoulFacts, ReviewPreview } from '../src/types/multiview.ts';
+import type { EvidenceValue, FoulFacts } from '../src/types/multiview.ts';
 
 function human<T>(value: T): EvidenceValue<T> {
   return { value, source: 'human', confidence: null, confirmed: true };
@@ -43,6 +44,121 @@ test('unknown core answers remain traversable without confirming facts', () => {
   assert.equal(nextGuideStep('context', facts), 'result');
   assert.equal(nextGuideStep('result', facts), 'result');
   assert.deepEqual(facts, before);
+});
+
+test('ordinary physical actions expose a contact preset without manufacturing a fact', () => {
+  for (const action of [
+    'Tackle',
+    'Standing Tackle',
+    'Holding',
+    'Pushing',
+    'Elbowing',
+    'Challenge',
+  ]) {
+    const facts = emptyFacts();
+    facts.offence_confirmed = model(true);
+    facts.action = model(action);
+    const before = structuredClone(facts);
+    assert.deepEqual(
+      pageReviewPresets('action', facts).map((preset) => preset.name),
+      ['contact'],
+    );
+    assert.equal(facts.contact.value, null);
+    assert.equal(facts.contact.confirmed, false);
+    assert.deepEqual(facts, before);
+    nextGuideStep('action', facts);
+    assert.deepEqual(facts, before);
+  }
+});
+
+test('dangerous play, simulation, unknown actions and no-offence suggestions do not presume contact', () => {
+  for (const action of ['High Leg', 'Dive', '', 'Unknown future action']) {
+    const facts = emptyFacts();
+    facts.offence_confirmed = model(true);
+    facts.action = model(action);
+    assert.deepEqual(pageReviewPresets('action', facts), []);
+    assert.equal(confirmGuidePage('action', facts).contact.value, null);
+  }
+  const facts = emptyFacts();
+  facts.action = model('Tackle');
+  facts.offence_confirmed = model(false);
+  assert.deepEqual(pageReviewPresets('action', facts), []);
+  assert.deepEqual(pageReviewPresets('severity', facts), []);
+  const accepted = confirmGuidePage('action', facts);
+  assert.equal(accepted.offence_confirmed.confirmed, true);
+  assert.equal(accepted.action.confirmed, false);
+  assert.equal(accepted.contact.value, null);
+  assert.equal(nextGuideStep('action', accepted), 'result');
+});
+
+test('one explicit confirmation accepts this page and retains model and reviewer provenance', () => {
+  const facts = emptyFacts();
+  facts.offence_confirmed = model(true);
+  facts.action = model('Pushing');
+  facts.intensity = model('reckless');
+  const before = structuredClone(facts);
+  const action = confirmGuidePage('action', facts);
+  assert.deepEqual(action.action, { ...facts.action, confirmed: true });
+  assert.deepEqual(action.offence_confirmed, { ...facts.offence_confirmed, confirmed: true });
+  assert.deepEqual(action.contact, human(true));
+  assert.equal(action.intensity.confirmed, false);
+  assert.equal(action.ball_in_play.value, null);
+  assert.equal(action.tactical_impact.value, null);
+  const severity = confirmGuidePage('severity', action);
+  assert.deepEqual(severity.intensity, { ...facts.intensity, confirmed: true });
+  assert.deepEqual(severity.ball_in_play, human(true));
+  assert.equal(severity.location, null);
+  assert.equal(severity.offender_team.value, null);
+  assert.equal(severity.tactical_impact.value, null);
+  assert.deepEqual(facts, before);
+  assert.equal(confirmGuidePage('severity', severity), severity);
+});
+
+test('manual no-contact and dead-ball answers take priority over presets and model suggestions', () => {
+  const facts = emptyFacts();
+  facts.offence_confirmed = model(true);
+  facts.action = model('Tackle');
+  facts.intensity = model('excessive_force');
+  facts.contact = human(false);
+  facts.ball_in_play = human(false);
+  const action = confirmGuidePage('action', facts);
+  const severity = confirmGuidePage('severity', action);
+  assert.equal(action.contact, facts.contact);
+  assert.equal(severity.ball_in_play, facts.ball_in_play);
+  assert.equal(nextGuideStep('severity', severity), 'result');
+  facts.ball_in_play = model(false);
+  assert.equal(nextGuideStep('severity', facts), 'location');
+});
+
+test('explicit unknowns and saved unknowns remain unknown through page confirmation', () => {
+  const facts = emptyFacts();
+  facts.offence_confirmed = model(true);
+  facts.action = model('Holding');
+  const protectedFields = ['contact', 'ball_in_play'] as const;
+  assert.deepEqual(pageReviewPresets('action', facts, { protectedFields }), []);
+  const action = confirmGuidePage('action', facts, { protectedFields });
+  const severity = confirmGuidePage('severity', action, { protectedFields });
+  assert.equal(severity.contact, facts.contact);
+  assert.equal(severity.ball_in_play, facts.ball_in_play);
+  assert.equal(confirmGuidePage('result', facts), facts);
+  assert.deepEqual(pageReviewPresets('action', facts, { hasSavedReview: true }), []);
+  assert.deepEqual(pageReviewPresets('severity', facts, { hasSavedReview: true }), []);
+  const saved = confirmGuidePage('severity', facts, { hasSavedReview: true });
+  assert.equal(saved.contact, facts.contact);
+  assert.equal(saved.ball_in_play, facts.ball_in_play);
+});
+
+test('contact presets track the currently selected action before the reviewer accepts them', () => {
+  const facts = emptyFacts();
+  facts.action = model('Tackle');
+  assert.equal(pageReviewPresets('action', facts).length, 1);
+  facts.action = human('High Leg');
+  assert.deepEqual(pageReviewPresets('action', facts), []);
+  assert.equal(confirmGuidePage('action', facts).contact.value, null);
+  facts.contact = { value: false, source: 'rule', confidence: null, confirmed: false };
+  facts.action = human('Tackle');
+  assert.deepEqual(pageReviewPresets('action', facts), []);
+  assert.equal(confirmGuidePage('action', facts).contact, facts.contact);
 });
 
 test('blank supplements are visited in order without changing the draft', () => {
@@ -209,46 +325,6 @@ test('preview requests cannot restore certainty after a later edit or a case rev
   scope.activate('case-B');
   scope.activate('case-A');
   assert.equal(scope.current(second, true), false);
-});
-
-function preview(canFinalize: boolean): ReviewPreview {
-  return {
-    assessment: {
-      status: canFinalize ? 'complete' : 'incomplete',
-      restart: canFinalize ? 'direct_free_kick' : 'unknown',
-      sanction: canFinalize ? 'yellow_card' : 'pending',
-      ruleset_version: 'test',
-      rule_trace: [],
-      missing_facts: canFinalize ? [] : ['location'],
-      conflicts: [],
-      geometry: null,
-      explanation_template: '',
-    },
-    restart_resolution: {
-      status: canFinalize ? 'resolved' : 'conditional',
-      value: canFinalize ? 'direct_free_kick' : null,
-    },
-    sanction_resolution: {
-      status: canFinalize ? 'resolved' : 'conditional',
-      value: canFinalize ? 'yellow_card' : null,
-    },
-    scenarios: [],
-    required_facts: canFinalize ? [] : ['location'],
-    optional_facts: [],
-    next_fact: canFinalize ? null : 'location',
-    can_finalize: canFinalize,
-  };
-}
-
-test('the primary save action requires fresh server finalization eligibility', () => {
-  assert.equal(reviewSaveState(null), 'uncertain');
-  assert.equal(reviewSaveState(preview(false)), 'uncertain');
-  assert.equal(reviewSaveState(preview(true)), 'reviewed');
-  const unsupported = preview(false);
-  unsupported.assessment.status = 'unsupported';
-  unsupported.restart_resolution.status = 'unavailable';
-  unsupported.sanction_resolution.status = 'unavailable';
-  assert.equal(reviewSaveState(unsupported), 'uncertain');
 });
 
 test('collapsed additional context is not silently confirmed by page adoption', () => {
