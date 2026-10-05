@@ -12,6 +12,29 @@ import { adoptModelFields } from '../components/multiview/reviewGuideFlow';
 import { useMultiviewReview } from './useMultiviewReview';
 import './multiview.css';
 
+// Presentation order is independent of the original case IDs and archived media paths.
+const hiddenFieldCases = new Set([
+  'manual-20261004-04-01',
+  'manual-20261004-04-02',
+  'manual-20261004-05-02',
+]);
+const fieldDemoTitles = new Map([
+  ['manual-20261004-02-01', '实地测试案例1'],
+  ['manual-20261004-03-01', '实地测试案例2'],
+  ['manual-20261004-05-01', '实地测试案例3'],
+]);
+function displayCases(items: MultiviewCase[]): MultiviewCase[] {
+  return items
+    .filter((item) => !hiddenFieldCases.has(item.case_id))
+    .map((item) => {
+      const title = fieldDemoTitles.get(item.case_id);
+      return title ? { ...item, title } : item;
+    });
+}
+function visibleSelection(id: string, items: MultiviewCase[]): string {
+  return !id || hiddenFieldCases.has(id) ? items[0]?.case_id || '' : id;
+}
+
 const noMedia: EvidenceReadiness = {
   allVideosReady: false,
   playableVideoCount: 0,
@@ -103,21 +126,22 @@ export default function Multiview({
   reload: () => Promise<void>;
 }) {
   const [mode, setMode] = useState<'video' | 'live'>('video');
-  const [selection, setSelection] = useState(linkedCase);
+  const [selection, setSelection] = useState(() => visibleSelection(linkedCase(), []));
   const [cases, setCases] = useState<MultiviewCase[]>([]);
   useEffect(() => {
     if (!catalog) return;
-    setCases(catalog.cases);
-    setSelection((value) => value || catalog.cases[0]?.case_id || '');
+    const visible = displayCases(catalog.cases);
+    setCases(visible);
+    setSelection((value) => visibleSelection(value, visible));
   }, [catalog]);
   useEffect(() => {
     const restore = () => {
       const id = linkedCase();
-      if (id) setSelection(id);
+      if (id) setSelection(visibleSelection(id, cases));
     };
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
-  }, []);
+  }, [cases]);
   useEffect(() => {
     if (!selection) return;
     const url = new URL(window.location.href);
@@ -126,8 +150,9 @@ export default function Multiview({
   }, [selection]);
   async function capture(id: string) {
     const result = await request<{ cases: MultiviewCase[] }>('/api/multiview/cases');
-    setCases(result.cases);
-    setSelection(id);
+    const visible = displayCases(result.cases);
+    setCases(visible);
+    setSelection(visibleSelection(id, visible));
     setMode('video');
     await reload();
   }
