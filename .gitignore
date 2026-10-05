@@ -33,3 +33,18 @@ backend_core/third_party/
 *.MOV
 *.MP4
 .DS_Store
+
+# Media archives belong in Google Drive; source and checksum manifests stay in Git.
+*.[mM][pP]4
+*.[mM][oO][vV]
+*.[aA][vV][iI]
+*.[mM][kK][vV]
+*.[wW][eE][bB][mM]
+*.[mM]4[vV]
+*.zip
+*.ZIP
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar

@@ -21,56 +21,6 @@
     font-size: 14px;
     font-weight: 650;
 }
-.rg-more {
-    position: relative;
-}
-.rg-more > summary {
-    list-style: none;
-    font-size: 20px;
-    font-weight: 650;
-    line-height: 24px;
-    min-width: 30px;
-    text-align: center;
-    border-radius: 5px;
-    cursor: pointer;
-}
-.rg-more > summary::-webkit-details-marker {
-    display: none;
-}
-.rg-more[open] > summary {
-    background: #f3f5f1;
-}
-.rg-more-menu {
-    position: absolute;
-    right: 0;
-    top: 30px;
-    z-index: 5;
-    display: grid;
-    width: 185px;
-    padding: 6px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    box-shadow: 0 8px 22px #18222d14;
-}
-.rg-more-menu p {
-    padding: 7px 9px;
-    font-size: 11px;
-    color: var(--muted);
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
-}
-.rg-more-menu button {
-    border: 0;
-    border-radius: 4px;
-    background: transparent;
-    text-align: left;
-    padding: 9px;
-    font-size: 12px;
-}
-.rg-more-menu button:hover {
-    background: #f5f7f1;
-}
 .rg-progress {
     display: flex;
     gap: 7px;
@@ -226,6 +176,58 @@
     font-size: 10px;
     color: var(--muted);
 }
+.rg-condition {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fafbf8;
+    padding: 11px;
+    margin-bottom: 18px;
+}
+.rg-condition-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.rg-condition-summary > div {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+.rg-condition-label {
+    font-size: 11px;
+    color: var(--muted);
+}
+.rg-condition-summary strong {
+    font-size: 12px;
+    font-weight: 550;
+}
+.rg-condition-source {
+    font-size: 9px;
+    color: #617b3f;
+    border: 1px solid #d3dfc4;
+    border-radius: 3px;
+    padding: 1px 4px;
+}
+.rg-condition-summary button {
+    border: 0;
+    background: transparent;
+    color: #506738;
+    font-size: 11px;
+    padding: 4px;
+    flex-shrink: 0;
+}
+.rg-condition .rg-question {
+    margin: 12px 0 0;
+}
+.rg-confirm-note {
+    font-size: 10px;
+    color: var(--muted);
+    line-height: 1.5;
+    margin: 0;
+}
 .rg-ai-adopt {
     display: flex;
     align-items: center;
@@ -265,7 +267,6 @@
     }
 }
 .rg-note,
-.rg-save-note,
 .rg-preview-status {
     color: var(--muted);
     font-size: 12px;
@@ -436,10 +437,7 @@
     font-size: 11px;
     text-align: left;
 }
-.rg-save-note {
-    font-size: 10px;
-    margin-top: 16px;
-}
+
 .rg-conflicts,
 .rg-preview-error,
 .rg-manual-review {
@@ -682,31 +680,6 @@
     margin-top: 6px;
     margin-bottom: 12px;
 }
-.rg-history {
-    padding: 8px 9px;
-    font-size: 12px;
-}
-.rg-history > summary {
-    cursor: pointer;
-}
-.rg-history-list {
-    max-height: 240px;
-    overflow-y: auto;
-    padding-top: 8px;
-}
-.rg-history-list > details {
-    font-size: 10px;
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
-}
-.rg-history-list p {
-    border: 0;
-    padding: 3px 0;
-    font-size: 10px;
-    overflow-wrap: anywhere;
-}
-
 /* Model emphasis remains independent of the reviewer's selected radio value. */
 .rg-choice.ai-recommended,
 .rg-action-chooser > summary.ai-recommended {

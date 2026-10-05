@@ -2,6 +2,12 @@
 
 Use a focused branch and pull request with the problem, change and relevant validation. Preserve upstream attribution and the extracted source manifest. Do not submit videos, weights, calibration bundles, device identifiers, private host configuration or credentials. Use synthetic fixtures for tests and identify simulated results clearly.
 
+## Case media and Git submissions
+
+For case-media changes, archive the required videos separately with repository-relative paths and upload them to the user's Google Drive. Record the actual download link, archive name, designated download directory, extraction command and checksums in [the media restore guide](docs/MULTIVIEW_ASSETS.md). Never stage videos or media archives, even with a force-add. Case definitions and hashes may be committed; raw provenance containing private source paths stays inside the ignored media archive.
+
+Before a requested commit, inspect the staged file list and run the applicable client checks. This demo does not save case review states or restore earlier judgments; case-switch acceptance must cover model suggestions, human answers, location, guide step and stale analysis responses. Commit after the authorized work and validation are complete; do not infer permission to publish or push.
+
 ## Client checks
 
 Node.js 22.12+ is required; CI uses Node.js 24. From the repository root:

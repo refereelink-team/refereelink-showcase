@@ -14,12 +14,9 @@ export interface FoulLocationPitchProps {
   geometry: LocationGeometry | null;
   offenderTeam: EvidenceValue<TeamLabel> | null;
   homeDefendsSide: EvidenceValue<DefendsSide> | null;
-  dirty: boolean;
-  saving?: boolean;
   disabled?: boolean;
   compact?: boolean;
   onChange: (location: FoulLocation | null) => void;
-  onSave?: () => void;
 }
 
 const clamp = (value: number, max: number) =>
@@ -42,12 +39,9 @@ export default function FoulLocationPitch({
   geometry,
   offenderTeam,
   homeDefendsSide,
-  dirty,
-  saving = false,
   disabled = false,
   compact = false,
   onChange,
-  onSave,
 }: FoulLocationPitchProps) {
   const [previous, setPrevious] = useState<FoulLocation | null>(null);
   const [canUndo, setCanUndo] = useState(false);
@@ -123,7 +117,6 @@ export default function FoulLocationPitch({
     <section className="rv-pitch-panel" aria-label="犯规位置标注">
       <div className="rv-panel-heading">
         <h3>犯规位置</h3>
-        {dirty && <span className="rv-unsaved">尚未保存</span>}
       </div>
       <svg
         className="rv-pitch"
@@ -215,22 +208,17 @@ export default function FoulLocationPitch({
           >
             撤销
           </button>
-          {onSave && (
-            <button type="button" disabled={disabled || !dirty || saving} onClick={onSave}>
-              {saving ? '保存中…' : '保存'}
-            </button>
-          )}
         </div>
       </div>
       {!compact && (
         <p className="rv-pitch-context">
-          犯规方 {offender === 'home' ? '主队' : offender === 'away' ? '客队' : '待确认'}
+          犯规方 {offender === 'home' ? '主队' : offender === 'away' ? '客队' : '未填写'}
           {' · '}主队防守{' '}
           {defendsSide === 'left'
             ? '左侧球门'
             : defendsSide === 'right'
               ? '右侧球门'
-              : '方向待确认'}
+              : '方向未填写'}
           {geometry?.in_offender_own_penalty_area === true
             ? ' · 犯规方本方禁区内'
             : geometry?.in_offender_own_penalty_area === false
@@ -241,7 +229,6 @@ export default function FoulLocationPitch({
       {location && (
         <span className={`rv-source-chip ${location.source === 'vision' ? 'model' : 'human'}`}>
           {location.source === 'vision' ? '视觉建议' : '人工标注'}
-          {location.confirmed ? ' · 已确认' : ' · 待确认'}
         </span>
       )}
     </section>

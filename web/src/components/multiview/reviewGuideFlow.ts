@@ -1,7 +1,58 @@
-import type { FoulFacts, ReviewPreview } from '../../types/multiview';
+import type { FoulFacts } from '../../types/multiview';
 import type { FactName } from './reviewFacts';
 
 export type ReviewGuideStep = 'action' | 'severity' | 'location' | 'context' | 'result';
+
+export interface ReviewPreset {
+  name: 'contact' | 'ball_in_play';
+  value: true;
+  explanation: string;
+}
+
+export interface ReviewPresetOptions {
+  protectedFields?: readonly FactName[];
+  hasSavedReview?: boolean;
+}
+
+// These are editable review assumptions, not additional observations made by the model.
+export function pageReviewPresets(
+  step: ReviewGuideStep,
+  facts: FoulFacts,
+  options: ReviewPresetOptions = {},
+): ReviewPreset[] {
+  if (options.hasSavedReview || facts.offence_confirmed.value === false) return [];
+  const available = (name: ReviewPreset['name']) =>
+    facts[name].value === null && !options.protectedFields?.includes(name);
+  const action = facts.action.value?.trim().toLowerCase();
+  if (
+    step === 'action' &&
+    available('contact') &&
+    ['tackle', 'standing tackle', 'holding', 'pushing', 'elbowing', 'challenge'].includes(
+      action ?? '',
+    )
+  )
+    return [{ name: 'contact', value: true, explanation: '按接触类动作复核，可更改。' }];
+  if (step === 'severity' && available('ball_in_play'))
+    return [{ name: 'ball_in_play', value: true, explanation: '按比赛进行中复核，可更改。' }];
+  return [];
+}
+
+// Called only by the explicitly labelled confirmation button, never by navigation or preview.
+export function confirmGuidePage(
+  step: ReviewGuideStep,
+  facts: FoulFacts,
+  options: ReviewPresetOptions = {},
+  expandedDetails = false,
+): FoulFacts {
+  let next = adoptModelFields(facts, pageAdoptableFields(step, facts, expandedDetails));
+  for (const preset of pageReviewPresets(step, facts, options)) {
+    if (next === facts) next = { ...facts };
+    Object.assign(next, {
+      [preset.name]: { value: preset.value, source: 'human', confidence: null, confirmed: true },
+    });
+  }
+  return next;
+}
 
 // Historical derived facts remain suggestions; the saved record is never mutated.
 export function normalizeLegacyDerivedFacts(facts: FoulFacts): FoulFacts {
@@ -31,7 +82,8 @@ export function nextGuideStep(step: ReviewGuideStep, facts: FoulFacts): ReviewGu
   if (step === 'severity')
     return facts.offence_confirmed.confirmed && facts.offence_confirmed.value === false
       ? 'result'
-      : facts.action.confirmed && facts.action.value?.trim().toLowerCase() === 'dive'
+      : (facts.action.confirmed && facts.action.value?.trim().toLowerCase() === 'dive') ||
+          (facts.ball_in_play.confirmed && facts.ball_in_play.value === false)
         ? 'result'
         : 'location';
   if (step === 'location') return 'context';
@@ -135,8 +187,4 @@ export function adoptModelFields(facts: FoulFacts, fields: readonly FactName[]):
     Object.assign(next, { [name]: { ...item, confirmed: true } });
   }
   return next;
-}
-
-export function reviewSaveState(preview: ReviewPreview | null): 'reviewed' | 'uncertain' {
-  return preview?.can_finalize ? 'reviewed' : 'uncertain';
 }
