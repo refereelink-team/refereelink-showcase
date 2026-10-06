@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from './api';
+import { serialPolling } from './serialPolling';
 import type { DetectionProfile, Job, TelemetrySnapshot } from './types';
 import { ExperimentRequestScope, type ExperimentTicket } from './experimentRequestScope';
 export function useResource<T>(loader: () => Promise<T>, interval = 0) {
@@ -25,11 +26,11 @@ export function useResource<T>(loader: () => Promise<T>, interval = 0) {
     setData(null);
     setError(null);
     setLoading(true);
-    void refresh();
-    const timer = interval ? setInterval(() => void refresh(), interval) : null;
+    const stop = interval ? serialPolling(refresh, interval) : null;
+    if (!interval) void refresh();
     return () => {
       generation.current++;
-      if (timer) clearInterval(timer);
+      stop?.();
     };
   }, [refresh, interval]);
   return { data, error, loading, refresh, setData, setError };
