@@ -230,6 +230,8 @@ export interface LiveCameraStatus {
   reconnect_count: number;
   last_error: string | null;
   source_type: 'rtsp' | 'field';
+  video_transport?: 'rtsp' | 'srt';
+  network_type?: string | null;
   source_host: string | null;
   receiving: boolean;
   preview_url: string | null;
@@ -249,6 +251,9 @@ export interface LiveMultiviewStatus {
   receiving_count?: number;
   phone?: {
     configured: boolean;
+    video_transport?: 'rtsp' | 'srt';
+    network_type?: string | null;
+    last_frame_received_at?: string | null;
     host: string | null;
     port: number;
     session_active: boolean;

@@ -114,3 +114,5 @@ See [docs/VALIDATION.md](docs/VALIDATION.md) for software and browser evidence, 
 Ablation runs, tracking action buttons, and foul startup preparation perform sequential inference on supplied videos. The native foul page presents startup-prepared results during looping playback; it does not run new inference for each browser playback loop. Playback FPS, startup time, offline inference throughput, and source-paced wall-clock alert latency are separate measurements. A video's 30 fps playback rate does not establish lossless, real-time multi-device operation. Internal leave-one-track-out calibration validation does not establish team-classification accuracy across matches.
 
 At the recorded acceptance session, the physical camera links were unreachable and the phone was not transmitting. Live mode displayed those states. Full three-input acceptance still requires restored connectivity and phone capture. UWB/IMU boards have not arrived, so physical positioning accuracy, installation-coordinate transforms, STM32 board flashing, and wireless range have not been validated.
+
+手机有线 RTSP 接线、现场采集代理与软件验证边界见 [WIRED_RTSP.md](docs/WIRED_RTSP.md)。
