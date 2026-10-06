@@ -1,3 +1,4 @@
+import LivePreview from '../components/LivePreview';
 import { useEffect, useState } from 'react';
 import type { Catalog } from '../types';
 import type { MultiviewCase } from '../types/multiview';
@@ -10,6 +11,7 @@ import { decisionFocusTime } from '../components/multiview/evidencePlayback';
 import ReviewGuide from '../components/multiview/ReviewGuide';
 import { adoptModelFields } from '../components/multiview/reviewGuideFlow';
 import { useMultiviewReview } from './useMultiviewReview';
+import { liveSourceLabel } from './liveSourceLabel';
 import './multiview.css';
 
 // Presentation order is independent of the original case IDs and archived media paths.
@@ -48,7 +50,7 @@ function linkedCase() {
 }
 
 export function LiveInputs({ onCapture }: { onCapture?: (id: string) => void }) {
-  const live = useResource(api.live, 4000),
+  const live = useResource(api.live, 1000),
     action = useAction();
   async function control(kind: 'start' | 'stop') {
     const result = await action.run(() => api.liveControl(kind));
@@ -87,7 +89,10 @@ export function LiveInputs({ onCapture }: { onCapture?: (id: string) => void }) 
         {live.data?.cameras.map((camera) => (
           <div className="live-camera" key={camera.camera_id}>
             {camera.preview_url && camera.receiving ? (
-              <img src={mediaUrl(camera.preview_url)} alt={`${camera.display_name}现场画面`} />
+              <LivePreview
+                url={mediaUrl(camera.preview_url) ?? camera.preview_url}
+                alt={`${camera.display_name}现场画面`}
+              />
             ) : (
               <Empty compact>等待现场画面</Empty>
             )}
@@ -98,15 +103,22 @@ export function LiveInputs({ onCapture }: { onCapture?: (id: string) => void }) 
               </span>
             </div>
             <p>
-              {camera.source_type === 'field' ? '手机输入' : 'RTSP 输入'} · 回放缓存{' '}
-              {camera.buffer_seconds.toFixed(1)}s
+              {liveSourceLabel(camera)} · 回放缓存 {camera.buffer_seconds.toFixed(1)}s
             </p>
             {camera.last_error && <small className="error-text">{camera.last_error}</small>}
           </div>
         ))}
       </div>
       {!live.data && <Empty>{live.loading ? '正在读取现场状态…' : '现场服务不可用'}</Empty>}
-      <p className="quiet">{live.data?.message || '现场状态来自后端接收服务'}</p>
+      {live.data?.phone?.video_transport === 'rtsp' && (
+        <p className="quiet">
+          手机、摄像头与 Mac 接同一交换机。手机使用 RefereeLink App 有线
+          RTSP；位姿与本地离线录制保留。
+        </p>
+      )}
+      <p className="quiet">
+        {live.data?.message || '现场状态来自后端接收服务；预览约每秒两帧，录像保留原始帧率'}
+      </p>
       {live.data?.phone_connect_origin && (
         <p className="quiet">
           手机入口：
