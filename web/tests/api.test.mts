@@ -1,6 +1,6 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { request, mediaUrl } from '../src/api.ts';
+import { api, request, mediaUrl } from '../src/api.ts';
 const originalFetch = globalThis.fetch;
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -49,25 +49,35 @@ test('successful payload retains false hardware and idle values', async () => {
   assert.deepEqual(await request('/telemetry'), snapshot);
 });
 
-import { parseCandidateEvents } from '../src/events.ts';
-test('candidate timeline uses actual media PTS and omits non-candidate decisions', () => {
-  const events = parseCandidateEvents(
-    JSON.stringify({
-      media_pts_seconds: 2.434,
-      source_frame_id: 74,
-      event: {
-        id: 'actual',
-        event_type: 'foul_candidate',
-        confidence: 0.558,
-        foul_details: { action: 'Holding' },
+import { candidateEventTime, candidateEmittedTime } from '../src/events.ts';
+test('structured foul results keep candidate PTS, details and review status intact', async () => {
+  const result = {
+    id: 'result/name',
+    revision: 'rev-1',
+    events: [
+      {
+        media_pts_seconds: 2.434,
+        source_frame_id: 74,
+        event: {
+          id: 'actual',
+          event_type: 'foul_candidate',
+          confidence: 0.558,
+          reviewed: false,
+          foul_details: { action: 'Holding' },
+        },
       },
-    }) +
-      '\n' +
-      JSON.stringify({ media_pts_seconds: 1, event: { event_type: 'no_offence' } }),
-  );
-  assert.equal(events.length, 1);
-  assert.equal(events[0].media_pts_seconds, 2.434);
-  assert.equal(events[0].event.foul_details?.action, 'Holding');
+    ],
+  };
+  let endpoint = '';
+  globalThis.fetch = async (url) => {
+    endpoint = String(url);
+    return new Response(JSON.stringify(result));
+  };
+  const actual = await api.foulResult('result/name');
+  assert.equal(endpoint, '/api/foul/results/result%2Fname');
+  assert.deepEqual(actual, result);
+  assert.equal(candidateEventTime(actual.events[0]), 2.434);
+  assert.equal(candidateEmittedTime(actual.events[0]), null);
 });
 
 test('structured revision conflicts retain the server revision for safe review recovery', async () => {

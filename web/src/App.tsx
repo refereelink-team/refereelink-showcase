@@ -98,7 +98,7 @@ export default function App() {
         ) : current === 'telemetry' ? (
           <Telemetry />
         ) : (
-          <Experiments key={current} kind={current} catalog={catalog.data} />
+          <Experiments catalog={catalog.data} />
         )}
       </div>
     </div>

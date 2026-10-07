@@ -109,7 +109,6 @@ export function setHumanFact(current: FoulFacts, name: FactName, raw: string): F
 
 export interface PrefillOptions {
   protectedFields?: ReadonlySet<FactName> | readonly FactName[];
-  hasSavedReview?: boolean;
 }
 
 export function prefillFacts(
@@ -117,8 +116,6 @@ export function prefillFacts(
   decision: MultiviewDecision,
   options: PrefillOptions = {},
 ): { facts: FoulFacts; changedFields: FactName[] } {
-  // A persisted review is authoritative, including facts intentionally left blank.
-  if (options.hasSavedReview) return { facts: current, changedFields: [] };
   const protectedFields = new Set(options.protectedFields ?? []);
   const candidates = factsFromDecision(decision);
   const facts = { ...current };

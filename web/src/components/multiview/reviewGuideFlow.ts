@@ -11,7 +11,6 @@ export interface ReviewPreset {
 
 export interface ReviewPresetOptions {
   protectedFields?: readonly FactName[];
-  hasSavedReview?: boolean;
 }
 
 // These are editable review assumptions, not additional observations made by the model.
@@ -20,7 +19,7 @@ export function pageReviewPresets(
   facts: FoulFacts,
   options: ReviewPresetOptions = {},
 ): ReviewPreset[] {
-  if (options.hasSavedReview || facts.offence_confirmed.value === false) return [];
+  if (facts.offence_confirmed.value === false) return [];
   const available = (name: ReviewPreset['name']) =>
     facts[name].value === null && !options.protectedFields?.includes(name);
   const action = facts.action.value?.trim().toLowerCase();
@@ -50,26 +49,6 @@ export function confirmGuidePage(
     Object.assign(next, {
       [preset.name]: { value: preset.value, source: 'human', confidence: null, confirmed: true },
     });
-  }
-  return next;
-}
-
-// Historical derived facts remain suggestions; the saved record is never mutated.
-export function normalizeLegacyDerivedFacts(facts: FoulFacts): FoulFacts {
-  let next = facts;
-  for (const name of ['contact', 'victim_team'] as const) {
-    const item = facts[name];
-    if (item.source !== 'rule' || !item.confirmed || item.value === null) continue;
-    if (next === facts) next = { ...facts };
-    Object.assign(next, { [name]: { ...item, confirmed: false, confidence: null } });
-  }
-  const region = facts.contact_region.value;
-  if (region === 'leg' || region === 'body') {
-    if (next === facts) next = { ...facts };
-    next.contact_region = {
-      ...facts.contact_region,
-      value: region === 'leg' ? 'lower_body' : 'upper_body',
-    };
   }
   return next;
 }

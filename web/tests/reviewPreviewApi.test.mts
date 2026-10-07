@@ -23,22 +23,26 @@ test('preview sends unknown facts without a saved revision or fabricated locatio
   assert.deepEqual(facts, before);
 });
 
-test('strict incomplete saves retain unknowns and optimistic revision while legacy callers may omit the policy', async () => {
+test('repeated previews send only the current draft and never save or explain a review', async () => {
   const facts = emptyFacts();
-  const requests: Record<string, unknown>[] = [];
-  globalThis.fetch = async (_url, options) => {
-    requests.push(JSON.parse(String(options?.body)));
-    return new Response(JSON.stringify({ review: {} }));
+  const requests: { url: string; method?: string; body: unknown }[] = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({
+      url: String(url),
+      method: options?.method,
+      body: JSON.parse(String(options?.body)),
+    });
+    return new Response(JSON.stringify({ can_finalize: false }));
   };
-  const draft = {
-    expected_revision: 4,
-    analysis_id: null,
-    facts,
-    review_state: 'uncertain' as const,
+  await api.previewReview('case', facts);
+  const changed = {
+    ...facts,
+    contact: { value: false, source: 'human' as const, confidence: null, confirmed: true },
   };
-  await api.saveReview('case', { ...draft, preserve_unknowns: true });
-  await api.saveReview('case', draft);
-  assert.deepEqual(requests[0], { ...draft, preserve_unknowns: true });
-  assert.equal(Object.hasOwn(requests[1], 'preserve_unknowns'), false);
+  await api.previewReview('case', changed);
+  assert.deepEqual(requests, [
+    { url: '/api/multiview/cases/case/review/preview', method: 'POST', body: { facts } },
+    { url: '/api/multiview/cases/case/review/preview', method: 'POST', body: { facts: changed } },
+  ]);
   assert.deepEqual(facts, emptyFacts());
 });

@@ -1,5 +1,17 @@
 # Extracted-core CUDA verification — 2026-10-02
 
+> Historical evidence only. The 57-file / 56-import counts below describe the
+> original extraction run on 2026-10-02, not acceptance of the current checkout.
+> `validation-summary.json` preserves that run unchanged. For the current source
+> inventory, verify every hash in `source-manifest.json`; hash verification alone
+> is not a new CUDA, model-quality, or contact-v3 qualification result.
+>
+> `extraction-audit.py` is the original reconstruction tool, not an update command
+> for this integrated core. Run it only with a separate empty target directory.
+> Re-extracting into this directory can overwrite later geometry and calibration
+> corrections. Preserve the original-source identities and record later local
+> modifications separately, as described in `SOURCE.md`.
+
 The extracted core passed one independent real CUDA job on AstraForge:
 `foul-2`, `projection_only`, using the validated five-class match calibration.
 The existing 12 ablation jobs were not rerun or modified.
