@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { TrackingFrame, TrackingResult, TrackingPitch } from '../../types/tracking';
 import { mediaUrl } from '../../api';
 import { Icon } from '../UI';
-import { timecode } from '../MediaPlayer';
+import { timecode } from '../timecode';
 import {
   entityColor,
   entityKey,

@@ -75,22 +75,6 @@ export function matchesDetectorSnapshot(
     ).every((key) => actual[key] === expected[key]),
   );
 }
-export function latestProfileJob(
-  jobs: Job[],
-  kind: 'tracking' | 'foul',
-  caseId: string,
-  profile: DetectionProfile,
-  fingerprint?: DetectorFingerprint | null,
-) {
-  if (kind === 'foul' && profile === 'mvit-contact-v3' && !fingerprint) return undefined;
-  return jobs.find(
-    (job) =>
-      job.kind === kind &&
-      job.case_id === caseId &&
-      (kind !== 'foul' ||
-        (detectionProfileOf(job) === profile && matchesDetectorSnapshot(job, fingerprint))),
-  );
-}
 export function profileArtifacts(
   job: Job | null,
   prepared: Artifact[],
@@ -170,27 +154,4 @@ export function targetLabel(target: InvolvedTarget) {
           ? 'P'
           : '?';
   return `${team}-${role}#${target.track_id}`;
-}
-export function parseCandidateEvents(text: string): CandidateRecord[] {
-  const records: CandidateRecord[] = [];
-  text.split(/\r?\n/).forEach((line, index) => {
-    if (!line.trim()) return;
-    const value = JSON.parse(line) as CandidateRecord;
-    if (value.event?.event_type !== 'foul_candidate') return;
-    const eventTime = candidateEventTime(value),
-      emitted = candidateEmittedTime(value);
-    if (
-      !Number.isFinite(value.media_pts_seconds) ||
-      value.media_pts_seconds < 0 ||
-      typeof value.event.id !== 'string' ||
-      !Number.isFinite(value.event.confidence) ||
-      !Number.isFinite(eventTime) ||
-      eventTime < 0 ||
-      (emitted !== null && (!Number.isFinite(emitted) || emitted < eventTime))
-    ) {
-      throw new Error(`候选记录格式错误：第 ${index + 1} 行`);
-    }
-    records.push(value);
-  });
-  return records.sort((a, b) => candidateEventTime(a) - candidateEventTime(b));
 }

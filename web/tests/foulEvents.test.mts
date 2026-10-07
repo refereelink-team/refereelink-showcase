@@ -7,8 +7,7 @@ import {
   candidateRegionLabel,
   detectionProfileOf,
   foulActionLabel,
-  latestProfileJob,
-  parseCandidateEvents,
+  matchesDetectorSnapshot,
   profileArtifacts,
   targetLabel,
 } from '../src/events.ts';
@@ -47,13 +46,21 @@ function job(id: string, profile?: Job['detection_profile']): Job {
   };
 }
 
-test('new profile selection cannot reuse legacy records or a different experimental branch', () => {
-  const jobs = [job('legacy'), job('pair', 'mvit-pair-v2'), job('full', 'mvit-full-v2')];
-  assert.equal(detectionProfileOf(jobs[0]), 'legacy-v1');
-  assert.equal(latestProfileJob(jobs, 'foul', 'foul-1', 'mvit-full-v2')?.id, 'full');
-  assert.equal(latestProfileJob(jobs, 'foul', 'foul-1', 'legacy-v1')?.id, 'legacy');
-  assert.equal(latestProfileJob(jobs, 'foul', 'foul-1', 'multidim-full-v2'), undefined);
-  assert.equal(latestProfileJob(jobs, 'foul', 'foul-2', 'mvit-pair-v2'), undefined);
+test('profile artifact selection cannot reuse legacy or different experimental records', () => {
+  const prepared = [
+    { id: 'legacy', kind: 'video', label: 'legacy' },
+    { id: 'pair', kind: 'video', label: 'pair', detection_profile: 'mvit-pair-v2' as const },
+    { id: 'full', kind: 'video', label: 'full', detection_profile: 'mvit-full-v2' as const },
+  ];
+  assert.equal(detectionProfileOf(prepared[0]), 'legacy-v1');
+  assert.deepEqual(profileArtifacts(null, prepared, 'foul-1', 'foul', 'mvit-full-v2'), [
+    prepared[2],
+  ]);
+  assert.deepEqual(profileArtifacts(null, prepared, 'foul-1', 'foul', 'multidim-full-v2'), []);
+  assert.deepEqual(
+    profileArtifacts(job('other-case', 'mvit-full-v2'), prepared, 'foul-2', 'foul', 'mvit-full-v2'),
+    [],
+  );
 });
 
 test('accepted contact results match the current code, model and configuration snapshot', () => {
@@ -68,11 +75,8 @@ test('accepted contact results match the current code, model and configuration s
     ...job('previous', 'mvit-contact-v3'),
     detector_fingerprint: { ...snapshot, core_manifest_sha256: 'old-core' },
   };
-  assert.equal(
-    latestProfileJob([previous, current], 'foul', 'foul-1', 'mvit-contact-v3', snapshot)?.id,
-    'current',
-  );
-  assert.equal(latestProfileJob([current], 'foul', 'foul-1', 'mvit-contact-v3'), undefined);
+  assert.equal(matchesDetectorSnapshot(current, snapshot), true);
+  assert.equal(matchesDetectorSnapshot(previous, snapshot), false);
   assert.deepEqual(
     profileArtifacts(previous, [], 'foul-1', 'foul', 'mvit-contact-v3', snapshot),
     [],
@@ -113,21 +117,11 @@ test('selected empty, pending or failed jobs never substitute prepared results',
   );
 });
 
-test('timeline points at the interaction while prompt time remains separately recorded', () => {
-  const earlier = {
-    ...candidate,
-    event: {
-      ...candidate.event,
-      id: 'earlier',
-      evidence: { event_time_s: 1.1, emitted_time_s: 1.7 },
-    },
-  };
-  const records = parseCandidateEvents([candidate, earlier].map(JSON.stringify).join('\n'));
-  assert.equal(records[0].event.id, 'earlier');
-  assert.equal(candidateEventTime(records[1]), 4.05);
-  assert.equal(candidateEmittedTime(records[1]), 5.1);
-  assert.equal(foulActionLabel(records[1].event.foul_details?.action), '铲球');
-  assert.equal(records[1].event.evidence?.evidence_end_s, 5.1);
+test('structured candidate timelines distinguish contact PTS from prompt PTS', () => {
+  assert.equal(candidateEventTime(candidate), 4.05);
+  assert.equal(candidateEmittedTime(candidate), 5.1);
+  assert.equal(foulActionLabel(candidate.event.foul_details?.action), '铲球');
+  assert.equal(candidate.event.evidence?.evidence_end_s, 5.1);
 });
 
 test('historical event PTS still works without invented prompt times or identities', () => {
@@ -156,30 +150,38 @@ test('region descriptions use observed image geometry and reject broken coordina
   assert.equal(candidateRegionLabel(invalid), null);
 });
 
-test('causal event records reject prompts before their recorded interaction', () => {
-  const invalid = {
+test('top-level candidate timing is preserved when localized evidence is absent', () => {
+  const record = {
     ...candidate,
-    event: { ...candidate.event, evidence: { event_time_s: 4, emitted_time_s: 3 } },
+    event: { ...candidate.event, evidence: undefined, event_time_s: 3.25, emitted_time_s: 4.5 },
   };
-  assert.throws(() => parseCandidateEvents(JSON.stringify(invalid)), /候选记录格式错误/);
+  assert.equal(candidateEventTime(record), 3.25);
+  assert.equal(candidateEmittedTime(record), 4.5);
+  assert.equal(candidateRegionLabel(record), null);
 });
 
-test('job requests carry an explicit experiment profile while old callers remain compatible', async () => {
+test('prepared foul requests use a specific job and immutable result revision', async () => {
   const original = globalThis.fetch;
-  const bodies: Record<string, unknown>[] = [];
-  globalThis.fetch = async (_url, options) => {
-    bodies.push(JSON.parse(String(options?.body)));
-    return new Response('{}', { headers: { 'Content-Type': 'application/json' } });
+  const requests: { url: string; method: string; body: unknown }[] = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url: String(url), method: options?.method || 'GET', body: options?.body });
+    return new Response('{}');
   };
   try {
-    await api.createJob('foul', 'foul-1', 'mvit-pair-v2');
-    await api.createJob('tracking', 'calibration');
-    assert.deepEqual(bodies[0], {
-      kind: 'foul',
-      case_id: 'foul-1',
-      detection_profile: 'mvit-pair-v2',
-    });
-    assert.deepEqual(bodies[1], { kind: 'tracking', case_id: 'calibration' });
+    await api.foulPreparation();
+    await api.job('job/name');
+    await api.foulResult('result/name');
+    await api.foulFrames('result/name', 'rev/with space', 500);
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      [
+        '/api/foul/preparation',
+        '/api/experiments/jobs/job%2Fname',
+        '/api/foul/results/result%2Fname',
+        '/api/foul/results/result%2Fname/frames?offset=500&limit=500&revision=rev%2Fwith%20space',
+      ],
+    );
+    assert.ok(requests.every((request) => request.method === 'GET' && request.body === undefined));
   } finally {
     globalThis.fetch = original;
   }

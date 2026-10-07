@@ -5,15 +5,12 @@ import type {
 } from './types/calibration';
 import type { TrackingCase, TrackingFramesPage, TrackingResult } from './types/tracking';
 import type { FoulFramesPage, FoulResult, FoulPreparation } from './types/foul';
-import type { Catalog, DetectionProfile, Job, TelemetrySnapshot, TelemetryConfig } from './types';
+import type { Catalog, Job, TelemetrySnapshot, TelemetryConfig } from './types';
 import type {
   LiveMultiviewStatus,
   MultiviewDecision,
-  ReviewRecord,
   ReviewPreview,
   FoulFacts,
-  ReviewState,
-  ExplanationResponse,
   MultiviewStatus,
 } from './types/multiview';
 export async function request<T>(
@@ -75,40 +72,9 @@ export const api = {
       { case_id: id, device: 'cuda' },
       120000,
     ),
-  review: (id: string) =>
-    request<{ review: ReviewRecord | null; analysis: MultiviewDecision | null }>(
-      `/api/multiview/cases/${encodeURIComponent(id)}/review`,
-    ),
-  reviewHistory: (id: string) =>
-    request<{ count: number; history: ReviewRecord[] }>(
-      `/api/multiview/cases/${encodeURIComponent(id)}/review/history`,
-    ),
   previewReview: (id: string, facts: FoulFacts) =>
     post<ReviewPreview>(`/api/multiview/cases/${encodeURIComponent(id)}/review/preview`, { facts }),
-  saveReview: (
-    id: string,
-    body: {
-      expected_revision: number;
-      analysis_id: string | null;
-      facts: FoulFacts;
-      review_state: ReviewState;
-      preserve_unknowns?: boolean;
-    },
-  ) =>
-    request<{ review: ReviewRecord }>(`/api/multiview/cases/${encodeURIComponent(id)}/review`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  explain: (id: string, revision: number) =>
-    post<ExplanationResponse>(`/api/multiview/cases/${encodeURIComponent(id)}/explanation`, {
-      revision,
-      use_llm: true,
-    }),
-  createJob: (kind: 'tracking' | 'foul', case_id: string, detection_profile?: DetectionProfile) =>
-    post<Job>('/api/experiments/jobs', { kind, case_id, detection_profile }),
   job: (id: string) => request<Job>(`/api/experiments/jobs/${encodeURIComponent(id)}`),
-  jobs: () => request<{ jobs: Job[] }>('/api/experiments/jobs'),
   foulPreparation: () => request<FoulPreparation>('/api/foul/preparation'),
   foulResult: (id: string) => request<FoulResult>(`/api/foul/results/${encodeURIComponent(id)}`),
   foulFrames: (id: string, revision: string, offset: number) =>

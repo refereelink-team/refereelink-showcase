@@ -122,7 +122,6 @@ export function useMultiviewReview(caseId: string) {
       const current = activeDraft.current;
       const seeded = prefillFacts(current.facts, result.decision, {
         protectedFields: new Set(current.protectedFields),
-        hasSavedReview: false,
       });
       retryPreview();
       scope.current.edited();

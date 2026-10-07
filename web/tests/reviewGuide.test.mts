@@ -8,7 +8,6 @@ import {
   confirmGuidePage,
   guideStepForFact,
   nextGuideStep,
-  normalizeLegacyDerivedFacts,
   pageAdoptableFields,
   pageReviewPresets,
 } from '../src/components/multiview/reviewGuideFlow.ts';
@@ -130,7 +129,7 @@ test('manual no-contact and dead-ball answers take priority over presets and mod
   assert.equal(nextGuideStep('severity', facts), 'location');
 });
 
-test('explicit unknowns and saved unknowns remain unknown through page confirmation', () => {
+test('explicit unknowns remain unknown through page confirmation', () => {
   const facts = emptyFacts();
   facts.offence_confirmed = model(true);
   facts.action = model('Holding');
@@ -141,11 +140,6 @@ test('explicit unknowns and saved unknowns remain unknown through page confirmat
   assert.equal(severity.contact, facts.contact);
   assert.equal(severity.ball_in_play, facts.ball_in_play);
   assert.equal(confirmGuidePage('result', facts), facts);
-  assert.deepEqual(pageReviewPresets('action', facts, { hasSavedReview: true }), []);
-  assert.deepEqual(pageReviewPresets('severity', facts, { hasSavedReview: true }), []);
-  const saved = confirmGuidePage('severity', facts, { hasSavedReview: true });
-  assert.equal(saved.contact, facts.contact);
-  assert.equal(saved.ball_in_play, facts.ball_in_play);
 });
 
 test('contact presets track the currently selected action before the reviewer accepts them', () => {
@@ -192,46 +186,36 @@ test('only a confirmed no-offence answer bypasses the remaining questions', () =
   assert.deepEqual(pageAdoptableFields('action', facts), []);
 });
 
-test('legacy derived contact and victim are downgraded without altering saved objects', () => {
-  const saved = physicalFacts();
-  saved.contact = rule(true);
-  saved.victim_team = rule('away');
-  saved.action = rule('Tackle');
-  saved.location = { x_m: 12, y_m: 34, source: 'human', confirmed: true };
-  const snapshot = structuredClone(saved);
-  const draft = normalizeLegacyDerivedFacts(saved);
-  assert.notEqual(draft, saved);
-  assert.deepEqual(draft.contact, {
-    value: true,
-    source: 'rule',
-    confidence: null,
-    confirmed: false,
-  });
-  assert.deepEqual(draft.victim_team, {
-    value: 'away',
-    source: 'rule',
-    confidence: null,
-    confirmed: false,
-  });
-  assert.equal(draft.action, saved.action);
-  assert.equal(draft.location, saved.location);
-  assert.deepEqual(saved, snapshot);
-  assert.equal(normalizeLegacyDerivedFacts(draft), draft);
+test('page confirmation never upgrades rule-derived facts to model or human observations', () => {
+  const facts = physicalFacts();
+  facts.contact = { ...rule(true), confirmed: false };
+  facts.victim_team = { ...rule('away'), confirmed: false };
+  facts.action = { ...rule('Tackle'), confirmed: false };
+  const before = structuredClone(facts);
+  assert.deepEqual(pageAdoptableFields('action', facts), []);
+  assert.equal(confirmGuidePage('action', facts), facts);
+  assert.equal(confirmGuidePage('context', facts, {}, true), facts);
+  assert.deepEqual(facts, before);
 });
 
-test('human overrides and already unconfirmed legacy values remain unchanged', () => {
+test('repeated current-session confirmation preserves human overrides and the selected pitch point', () => {
   const facts = physicalFacts();
   facts.victim_team = human('home');
-  assert.equal(normalizeLegacyDerivedFacts(facts), facts);
-  facts.contact = { ...rule(false), confirmed: false };
-  assert.equal(normalizeLegacyDerivedFacts(facts), facts);
-  assert.equal(facts.contact.value, false);
+  facts.contact = human(false);
+  facts.location = { x_m: 12, y_m: 34, source: 'human', confirmed: true };
+  const before = structuredClone(facts);
+  for (const step of ['action', 'severity', 'location', 'context', 'result'] as const)
+    assert.equal(confirmGuidePage(step, facts), facts);
+  assert.deepEqual(facts, before);
 });
 
-test('rule-derived blank values do not create confirmation or a changed draft', () => {
+test('inspecting current-session presets never changes blank rule-derived context', () => {
   const facts = emptyFacts();
   facts.contact = { value: null, source: 'rule', confidence: null, confirmed: false };
-  assert.equal(normalizeLegacyDerivedFacts(facts), facts);
+  const before = structuredClone(facts);
+  assert.deepEqual(pageReviewPresets('action', facts), []);
+  assert.equal(pageReviewPresets('severity', facts).length, 1);
+  assert.deepEqual(facts, before);
 });
 
 test('page adoption selects only visible, nonblank and unconfirmed model suggestions', () => {
@@ -340,17 +324,16 @@ test('collapsed additional context is not silently confirmed by page adoption', 
   ]);
 });
 
-test('legacy contact-region aliases normalize without changing provenance or saved history', () => {
-  const facts = physicalFacts();
-  facts.contact_region = human('leg');
-  const next = normalizeLegacyDerivedFacts(facts);
-  assert.equal(next.contact_region.value, 'lower_body');
-  assert.equal(next.contact_region.source, 'human');
-  assert.equal(next.contact_region.confirmed, true);
-  assert.equal(facts.contact_region.value, 'leg');
-  assert.equal(normalizeLegacyDerivedFacts(next), next);
-  facts.contact_region = human('body');
-  assert.equal(normalizeLegacyDerivedFacts(facts).contact_region.value, 'upper_body');
+test('current contact-region values retain provenance through page confirmation', () => {
+  for (const region of ['lower_body', 'upper_body'] as const) {
+    const facts = physicalFacts();
+    facts.contact_region = model(region);
+    const before = structuredClone(facts);
+    const next = confirmGuidePage('context', facts, {}, true);
+    assert.deepEqual(next.contact_region, { ...facts.contact_region, confirmed: true });
+    assert.deepEqual(facts, before);
+    assert.equal(confirmGuidePage('context', next, {}, true), next);
+  }
 });
 
 test('attempt and tactical questions follow the actual rule dependencies', () => {

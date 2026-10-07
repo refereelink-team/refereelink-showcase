@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ExperimentRequestScope } from '../src/experimentRequestScope.ts';
 
-test('a late job-history response cannot replace a newly submitted task', () => {
+test('a late prepared-job response cannot replace a new boot or result revision', () => {
   const scope = new ExperimentRequestScope();
-  scope.activate('foul:video1:mvit-contact-v3');
-  const history = scope.ticket();
-  const submitted = scope.submitted();
-  assert.equal(scope.current(history), false);
-  assert.equal(scope.current(submitted), true);
+  scope.activate('foul:video1:v3:boot1:job1:result1:revision1');
+  const old = scope.ticket();
+  scope.activate('foul:video1:v3:boot2:job2:result2:revision2');
+  assert.equal(scope.current(old), false);
+  assert.equal(scope.current(scope.ticket()), true);
 });
 
 test('an earlier visit and polling response remain stale after returning to the same profile', () => {
@@ -24,7 +24,7 @@ test('an earlier visit and polling response remain stale after returning to the 
 test('a qualification change starts a different task-response scope', () => {
   const scope = new ExperimentRequestScope();
   scope.activate('foul:video1:v3:accepted-configuration-1');
-  const old = scope.submitted();
+  const old = scope.ticket();
   scope.activate('foul:video1:v3:accepted-configuration-2');
   assert.equal(scope.current(old), false);
 });

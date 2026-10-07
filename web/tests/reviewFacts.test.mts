@@ -81,11 +81,18 @@ test('explicitly cleared fields remain blank when a new analysis finishes', () =
   assert.deepEqual(result.changedFields, ['offence_confirmed', 'intensity']);
 });
 
-test('persisted reviews remain authoritative even when they contain blank facts', () => {
+test('protected blank fields remain unknown while a fresh current-session draft is prefilled', () => {
   const current = emptyFacts();
-  const result = prefillFacts(current, decision, { hasSavedReview: true });
-  assert.equal(result.facts, current);
+  const before = structuredClone(current);
+  const result = prefillFacts(current, decision, {
+    protectedFields: ['offence_confirmed', 'action', 'intensity'],
+  });
+  assert.deepEqual(result.facts, current);
   assert.deepEqual(result.changedFields, []);
+  assert.deepEqual(current, before);
+  const fresh = prefillFacts(emptyFacts(), decision);
+  assert.deepEqual(fresh.changedFields, ['offence_confirmed', 'action', 'intensity']);
+  assert.equal(fresh.facts.action.confirmed, false);
 });
 
 test('confirmed model suggestions are protected and identical suggestions do not reanimate', () => {

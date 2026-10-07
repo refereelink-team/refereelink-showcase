@@ -9,7 +9,7 @@ import type {
 } from '../../types/calibration';
 import { api } from '../../api';
 import { Alert, Icon, PageHeader } from '../UI';
-import { timecode } from '../MediaPlayer';
+import { timecode } from '../timecode';
 import CalibrationVideo from './CalibrationVideo';
 import BestCrop from './BestCrop';
 import {
