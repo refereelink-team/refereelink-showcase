@@ -41,6 +41,22 @@ def test_imu_raw_length_rejected_and_other_functions_ignored():
     assert parser.feed(other + bytes([sum(other) & 255])) == []
 
 
+def test_imu_documented_mixed_stream_only_emits_acceleration():
+    # Constructed from the official workbook, not captured from a device.
+    other_frames = []
+    for function, values in ((0x16, (1, 0, 0, 0)), (0x26, (0, 0, 0)),
+                             (0x32, (0, 25, 101325, 101325))):
+        payload = struct.pack(f"<{len(values)}f", *values)
+        frame = bytes((0x7e, 0x23, len(payload) + 5, function)) + payload
+        other_frames.append(frame + bytes([sum(frame) & 255]))
+    parser = IMUParser()
+    frames = []
+    for byte in b"".join(other_frames) + VENDOR_RAW:
+        frames.extend(parser.feed(bytes([byte])))
+    assert len(frames) == 1 and frames[0].raw_xyz == (81, -103, 2039)
+    assert parser.rejected_frames == 0
+
+
 def test_uwb_fragmented_frame_little_endian_cm_sequence():
     raw = b"mr\x02\x05" + struct.pack("<5H", 513, 500, 500, 400, 500) + b"\r\n"
     parser = UWBParser()
@@ -51,13 +67,24 @@ def test_uwb_fragmented_frame_little_endian_cm_sequence():
     assert UWBParser().feed(raw[:-2] + b"\n\r")[0] == frame
 
 
-def test_uwb_corrupt_boundary_duplicate_and_out_of_range():
+@pytest.mark.parametrize("fourth_range", [b"\xf4\x01", b"\x58\x02", b"\x00\x00", b"\xff\xff"])
+def test_uwb_disabled_fourth_anchor_does_not_block_first_three(fourth_range):
+    # Constructed from the official host manual's byte table, not a hardware capture.
+    raw = bytes.fromhex("6d 72 02 05 01 02 f4 01 f4 01 90 01") + fourth_range + b"\r\n"
+    parser = UWBParser()
+    frames = []
+    for byte in raw:
+        frames.extend(parser.feed(bytes([byte])))
+    assert len(frames) == 1
+    assert frames[0].sequence == 513 and frames[0].ranges_m == (5, 5, 4)
+    assert parser.rejected_frames == 0
+
+
+def test_uwb_corrupt_boundary_and_out_of_range():
     parser = UWBParser()
     good = encode_uwb(5, 0, (5, 5, 4))
-    duplicate = bytearray(good)
-    duplicate[12] ^= 1
-    assert parser.feed(good[:-2] + b"XX" + bytes(duplicate) + encode_uwb(5, 1, (31, 5, 4)) + good) == [UWBParser().feed(good)[0]]
-    assert parser.rejected_frames == 3
+    assert parser.feed(good[:-2] + b"XX" + encode_uwb(5, 1, (31, 5, 4)) + good) == [UWBParser().feed(good)[0]]
+    assert parser.rejected_frames == 2
     assert parser.last_rejection == "uwb_range_out_of_bounds"
 
 

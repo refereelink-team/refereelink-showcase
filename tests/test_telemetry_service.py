@@ -2,6 +2,7 @@ import asyncio
 import math
 import os
 import pty
+import struct
 import time
 
 from fastapi import FastAPI
@@ -68,6 +69,19 @@ def test_bounded_history_and_slow_subscriber_keep_latest():
     assert not service.subscribers
 
 
+def test_rejected_geometry_does_not_advance_sequence():
+    service = TelemetryService()
+    activate_fixture(service)
+    service.ingest("uwb", encode_uwb(5, 1, fixture_ranges(service)))
+    service.ingest("uwb", encode_uwb(5, 30000, (1, 1, 1)))
+    service.ingest("uwb", encode_uwb(5, 2, fixture_ranges(service)))
+    snapshot = service.snapshot()
+    assert snapshot["uwb"]["rejected_frames"] == 1
+    assert snapshot["uwb"]["last_rejection"] == "inconsistent_range_geometry"
+    assert snapshot["uwb"]["position"]["sequence"] == 2
+    assert len(snapshot["uwb"]["history"]) == 2
+
+
 def test_api_idle_demo_stop_config_and_ws_cleanup():
     app = FastAPI()
     service = register_telemetry(app)
@@ -112,15 +126,18 @@ def test_config_anchor_order_degenerate_and_finite_rejected():
 
 
 @pytest.mark.asyncio
-async def test_real_pyserial_pty_fragmented_read_and_peer_disconnection():
+@pytest.mark.parametrize("fourth_range_cm", [None, 700])
+async def test_real_pyserial_pty_fragmented_read_and_peer_disconnection(fourth_range_cm):
     # A Linux PTY exercises actual pyserial and asynchronous read plumbing; no physical hardware claim.
     master, slave = pty.openpty()
     service = TelemetryService(allow_test_ports=True)
     try:
-        await service.configure({"serial": {"uwb": {"port": os.ttyname(slave)}}})
+        await service.configure({"tag_id": 9, "serial": {"uwb": {"port": os.ttyname(slave)}}})
         connected = await service.connect(["uwb"])
         assert connected["connections"]["uwb"]["state"] == "connected"
-        frame = encode_uwb(5, 0, fixture_ranges(service))
+        distances = [round(d * 100) for d in fixture_ranges(service)]
+        fourth = distances[0] if fourth_range_cm is None else fourth_range_cm
+        frame = b"mr\x02\x09" + struct.pack("<5H", 0, *distances, fourth) + b"\r\n"
         os.write(master, frame[:5])
         await asyncio.sleep(0.15)
         assert service.snapshot()["uwb"]["position"] is None
@@ -130,6 +147,10 @@ async def test_real_pyserial_pty_fragmented_read_and_peer_disconnection():
                 break
             await asyncio.sleep(0.02)
         assert service.snapshot()["uwb"]["position_valid"]
+        assert service.snapshot()["uwb"]["position"]["tag_id"] == 9
+        assert service.snapshot()["uwb"]["position"]["x_m"] == pytest.approx(3, abs=0.02)
+        assert service.snapshot()["uwb"]["position"]["y_m"] == pytest.approx(2, abs=0.02)
+        assert service.snapshot()["connections"]["imu"]["state"] == "disconnected"
         assert not service.snapshot()["hardware_verified"]
         os.close(master)
         master = None

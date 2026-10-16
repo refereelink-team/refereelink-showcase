@@ -22,6 +22,9 @@ The six paired-camera field cases are distributed as a separate Google Drive ZIP
 3. **Foul detection:** a verified CUDA backend startup queues fresh `mvit-contact-v3` tasks for the two foul clips, provided that a valid private qualification record is available. The native page waits for the current boot's complete results, then loops the original video with frontend SVG contact markers and optional player boxes. Notifications, the timeline, and the inspector reveal candidates at their recorded emission PTS and clear when playback returns to the beginning. Selecting a candidate seeks to the actual interaction time and displays its action, severity, and model scores. Prepared contact markers follow the observed contact frame independently of the later notification. A model candidate is not a final referee decision. See [the detector guide](docs/REALTIME_FOUL.md) and [the native presentation guide](docs/NATIVE_FOUL_PRESENTATION.md).
 4. **Football positioning:** configure three anchor coordinates, a tag ID, and UWB/IMU serial ports. The page displays 2D positions and trajectories, with XYZ acceleration waveforms at the lower right. An explicit simulation mode is available before hardware arrives. Simulated UART frames use the same parsers and remain labeled `simulation` with `hardware_verified=false`.
 
+For BP-TWR-30 firmware selection, wiring, Linux backend serial placement and physical acceptance, follow the [TWR-30 setup guide](docs/hardware/TWR30_SETUP.md). UWB-only operation does not require an IMU port.
+For the current Yahboom 6/9/10-axis module, follow the [IMU setup guide](docs/hardware/IMU_SETUP.md). Only sensor-axis acceleration including gravity is displayed; attitude and IMU/UWB fusion are not implemented.
+
 ## Repository boundaries
 
 ```text
