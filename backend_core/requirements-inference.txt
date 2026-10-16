@@ -1,7 +1,7 @@
 # Install on the local WSL2/Linux or remote CUDA host. The torch wheel must support its GPU.
 # Historical CUDA observations are recorded separately in runtime-environment.json.
 torch==2.14.0
-torchvision==0.28.0
+torchvision==0.29.1
 ultralytics==8.4.95
 supervision==0.29.1
 numpy==2.5.3
