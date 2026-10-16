@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useAction, useTelemetry } from '../hooks';
-import type { Anchor, TelemetrySnapshot, Acceleration } from '../types';
+import type { Anchor, TelemetryConfig, TelemetrySnapshot, Acceleration } from '../types';
+import { telemetryDevicePatch } from '../telemetryConfig';
 import { Alert, Empty, Footer, Modes, PageHeader } from '../components/UI';
 const states: Record<string, string> = {
   disconnected: '未连接',
@@ -142,6 +143,7 @@ export default function Telemetry() {
     [anchors, setAnchors] = useState<Anchor[]>([]),
     [uwbPort, setUwbPort] = useState(''),
     [imuPort, setImuPort] = useState(''),
+    [imuTransport, setImuTransport] = useState<TelemetryConfig['imu_transport']>('usb'),
     [tagId, setTagId] = useState(5),
     [configured, setConfigured] = useState(false),
     [notice, setNotice] = useState<string | null>(null);
@@ -150,6 +152,7 @@ export default function Telemetry() {
       setAnchors(telemetry.data.config.anchors);
       setUwbPort(telemetry.data.config.serial.uwb.port || '');
       setImuPort(telemetry.data.config.serial.imu.port || '');
+      setImuTransport(telemetry.data.config.imu_transport ?? 'usb');
       setTagId(telemetry.data.config.tag_id);
       setConfigured(true);
     }
@@ -164,14 +167,7 @@ export default function Telemetry() {
   async function save() {
     setNotice(null);
     const result = await action.run(() =>
-      api.telemetryConfig({
-        anchors,
-        tag_id: tagId,
-        serial: {
-          uwb: { port: uwbPort || null, baudrate: 115200 },
-          imu: { port: imuPort || null, baudrate: 115200 },
-        },
-      }),
+      api.telemetryConfig(telemetryDevicePatch(anchors, tagId, imuTransport, uwbPort, imuPort)),
     );
     if (result) {
       telemetry.setData(result);
@@ -252,16 +248,28 @@ export default function Telemetry() {
         <aside className="inspector">
           <section>
             <h2>设备连接</h2>
+            <p className="quiet">
+              已保存接法：
+              {snapshot?.config.imu_transport === 'uwb_bridge_v1'
+                ? 'UWB 桥接（实验，需自定义固件）'
+                : 'IMU 独立 USB'}
+            </p>
             {(['uwb', 'imu'] as const).map((kind) => (
               <div className="connection-row" key={kind}>
                 <strong>{kind.toUpperCase()}</strong>
                 <span
                   className={`signal ${snapshot?.connections[kind].state === 'connected' && !snapshot.connections[kind].stale ? 'online' : ''}`}
                 >
-                  {states[snapshot?.connections[kind].state || 'disconnected']}
+                  {kind === 'imu' &&
+                  snapshot?.config.imu_transport === 'uwb_bridge_v1' &&
+                  snapshot.connections.imu.state === 'connected'
+                    ? '共用 A1 串口'
+                    : states[snapshot?.connections[kind].state || 'disconnected']}
                   {snapshot?.connections[kind].state === 'connected' &&
                   snapshot.connections[kind].stale
-                    ? ' · 数据过期'
+                    ? kind === 'imu' && snapshot.config.imu_transport === 'uwb_bridge_v1'
+                      ? ' · 等待有效桥接帧 / 已过期'
+                      : ' · 数据过期'
                     : ''}
                   {snapshot?.connections[kind].state === 'connected' &&
                   !snapshot.connections[kind].stale
@@ -272,6 +280,27 @@ export default function Telemetry() {
             ))}
             {mode === 'device' && (
               <div className="port-fields">
+                <label className="field">
+                  <span>IMU 接入方式（断开后切换）</span>
+                  <select
+                    aria-label="IMU 接入方式"
+                    value={imuTransport}
+                    disabled={action.busy || snapshot?.source_mode !== 'idle'}
+                    onChange={(e) =>
+                      setImuTransport(e.target.value as TelemetryConfig['imu_transport'])
+                    }
+                  >
+                    <option value="usb">独立 USB 接电脑（现有模式）</option>
+                    <option value="uwb_bridge_v1">接标签 STM32，经 UWB（实验 / 需新固件）</option>
+                  </select>
+                </label>
+                {imuTransport === 'uwb_bridge_v1' && (
+                  <p className="notice" role="status">
+                    方案预接入：球内 IMU → 标签 STM32 → UWB → A1。只填写 A1 串口。 原厂 Location HEX
+                    不会传输 IMU；本轮未生成桥接 HEX，切换页面不会更新固件。 未收到自定义 mi v1
+                    帧时，IMU 保持无有效数据，不会用定位帧或回放补齐。
+                  </p>
+                )}
                 <label className="field">
                   <span>标签 ID（十进制，默认 5 / 0x05）</span>
                   <input
@@ -286,10 +315,12 @@ export default function Telemetry() {
                 </label>
                 <p className="quiet">
                   BP-TWR-30：连接 0x0001 基站，115200 / 8N1。填写运行后端的 Linux 主机串口路径；仅用
-                  UWB 时，IMU 留空。
+                  UWB 时，IMU 留空。桥接模式也只填 A1，但需要配套标签/A1 固件。
                 </p>
                 <label className="field">
-                  <span>UWB 串口</span>
+                  <span>
+                    {imuTransport === 'uwb_bridge_v1' ? 'A1 共享串口（UWB + IMU）' : 'UWB 串口'}
+                  </span>
                   <input
                     value={uwbPort}
                     disabled={action.busy || snapshot?.source_mode !== 'idle'}
@@ -297,15 +328,17 @@ export default function Telemetry() {
                     onChange={(e) => setUwbPort(e.target.value)}
                   />
                 </label>
-                <label className="field">
-                  <span>IMU 串口</span>
-                  <input
-                    value={imuPort}
-                    disabled={action.busy || snapshot?.source_mode !== 'idle'}
-                    placeholder="串口路径"
-                    onChange={(e) => setImuPort(e.target.value)}
-                  />
-                </label>
+                {imuTransport === 'usb' && (
+                  <label className="field">
+                    <span>IMU 串口</span>
+                    <input
+                      value={imuPort}
+                      disabled={action.busy || snapshot?.source_mode !== 'idle'}
+                      placeholder="串口路径"
+                      onChange={(e) => setImuPort(e.target.value)}
+                    />
+                  </label>
+                )}
                 <p className="quiet">
                   Yahboom IMU：115200 / 8N1，7E 23
                   协议；当前仅显示含重力的传感器轴加速度，不显示姿态角。
@@ -340,6 +373,12 @@ export default function Telemetry() {
                   {snapshot[kind].last_rejection && ` · 最近原因：${snapshot[kind].last_rejection}`}
                 </p>
               ))}
+            {snapshot?.transport && (
+              <p className="quiet">
+                A1 分帧拒绝：{snapshot.transport.rejected_frames}
+                {snapshot.transport.last_rejection && ` · ${snapshot.transport.last_rejection}`}
+              </p>
+            )}
           </section>
           <section>
             <h2>锚点坐标</h2>

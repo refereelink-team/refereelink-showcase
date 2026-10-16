@@ -101,6 +101,7 @@ export interface SerialConnection {
 export interface TelemetryConfig {
   anchors: Anchor[];
   tag_id: number;
+  imu_transport: 'usb' | 'uwb_bridge_v1';
   plane_height_m: number;
   history_limit: number;
   stale_after_s: number;
@@ -132,5 +133,12 @@ export interface TelemetrySnapshot {
     last_rejection: string | null;
   };
   units: { position: string; acceleration: string };
+  transport?: {
+    imu: TelemetryConfig['imu_transport'];
+    firmware_required: boolean;
+    bridge_protocol: string;
+    rejected_frames: number;
+    last_rejection: string | null;
+  };
   evidence: { notice: string };
 }

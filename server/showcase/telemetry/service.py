@@ -13,7 +13,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .parsers import IMUParser, UWBParser, encode_imu, encode_uwb, trilaterate
+from .parsers import BridgeParser, BridgedIMUFrame, IMUParser, UWBParser, encode_imu, encode_uwb, trilaterate
 
 
 class SerialSettings(BaseModel):
@@ -38,6 +38,7 @@ class TelemetryConfig(BaseModel):
         Anchor(id="0x0003", x_m=4, y_m=7),
     ])
     tag_id: int = Field(default=5, ge=1, le=255)
+    imu_transport: Literal["usb", "uwb_bridge_v1"] = "usb"
     plane_height_m: float = Field(default=0.3, ge=0, le=10)
     history_limit: int = Field(default=240, ge=10, le=2000)
     stale_after_s: float = Field(default=2.0, ge=0.2, le=30)
@@ -54,6 +55,11 @@ class TelemetryConfig(BaseModel):
             raise ValueError("three-anchor 2D requires every anchor and tag at plane_height_m")
         if set(self.serial) != {"uwb", "imu"}:
             raise ValueError("serial must have exactly uwb and imu entries")
+        if self.imu_transport == "uwb_bridge_v1":
+            if self.serial["imu"].port:
+                raise ValueError("bridge mode uses only the A1 uwb port; clear the independent imu port")
+            if self.serial["uwb"].baudrate != 115200:
+                raise ValueError("bridge v1 requires A1 at 115200 baud")
         points = [(a.x_m, a.y_m) for a in self.anchors]
         area4 = abs(4 * ((points[1][0] - points[0][0]) * (points[2][1] - points[0][1]) -
                          (points[1][1] - points[0][1]) * (points[2][0] - points[0][0])))
@@ -80,6 +86,8 @@ class TelemetryService:
         self.connections = {"uwb": _connection(), "imu": _connection()}
         self.uwb_parser = UWBParser()
         self.imu_parser = IMUParser()
+        self.bridge_parser = BridgeParser()
+        self.imu_sequence: int | None = None
         self.position_history = deque(maxlen=self.config.history_limit)
         self.acceleration_history = deque(maxlen=self.config.history_limit)
         self.ranges_m: list[float] = []
@@ -135,8 +143,15 @@ class TelemetryService:
                       "gravity_included": True, "position_frame": "configured_anchor_plane"},
             "stream": {"subscriber_queue_limit": 1, "dropped_snapshots": self.dropped_snapshots,
                        "history_limit": self.config.history_limit},
+            "transport": {"imu": self.config.imu_transport,
+                          "firmware_required": self.config.imu_transport == "uwb_bridge_v1",
+                          "bridge_protocol": "refereelink_mi_v1",
+                          "rejected_frames": self.bridge_parser.rejected_frames,
+                          "last_rejection": self.bridge_parser.last_rejection},
             "evidence": {"notice": "模拟数据：仅验证展示与协议处理，设备尚未实测。" if self.source_mode == "simulation" else
-                         "硬件未验收：串口打开和有效帧不证明定位精度。三基站仅同平面2D。",
+                         ("实验桥接模式：需自定义标签/A1固件，原厂HEX不传IMU；有效帧不证明无线链路或精度。"
+                          if self.config.imu_transport == "uwb_bridge_v1" else
+                          "硬件未验收：串口打开和有效帧不证明定位精度。三基站仅同平面2D。"),
                          "uwb_protocol_verified": True, "imu_protocol_verified": True,
                          "hardware_verified": False},
         }
@@ -172,6 +187,37 @@ class TelemetryService:
             raise ValueError("cannot ingest while idle")
         if self.connections[channel]["state"] not in ("connected", "simulation"):
             raise ValueError("cannot ingest disconnected channel")
+        if channel == "uwb" and self.source_mode == "serial":
+            if data:
+                self.connections["uwb"]["last_received_at"] = self.clock()
+            for frame in self.bridge_parser.feed(data):
+                if isinstance(frame, bytes):
+                    self._ingest_channel("uwb", frame)
+                elif self.config.imu_transport == "uwb_bridge_v1":
+                    self._ingest_bridge_imu(frame)
+            return
+        if self.config.imu_transport == "uwb_bridge_v1" and self.source_mode == "serial":
+            raise ValueError("bridge mode receives both channels from the A1 uwb reader")
+        self._ingest_channel(channel, data)
+
+    def _ingest_bridge_imu(self, frame: BridgedIMUFrame) -> None:
+        self.connections["imu"]["last_received_at"] = self.clock()
+        if frame.tag_id != self.config.tag_id:
+            self._reject("imu", "unexpected_bridge_tag_id")
+            return
+        if self.imu_sequence is not None and not 0 < ((frame.sequence - self.imu_sequence) & 0xffff) < 0x8000:
+            self._reject("imu", "duplicate_or_out_of_order_imu_sequence")
+            return
+        # A valid outer CRC must not hide a corrupt or non-raw vendor payload.
+        if frame.payload[:4] != b"\x7e\x23\x17\x04" or sum(frame.payload[:-1]) & 0xff != frame.payload[-1]:
+            self._reject("imu", "invalid_bridge_imu_payload")
+            return
+        self._ingest_channel("imu", frame.payload)
+        self.imu_sequence = frame.sequence
+        self.acceleration_history[-1].update(tag_id=frame.tag_id, sequence=frame.sequence,
+                                             sample_ms=frame.sample_ms, transport="uwb_bridge_v1")
+
+    def _ingest_channel(self, channel: str, data: bytes) -> None:
         now = self.clock()
         if data:
             self.connections[channel]["last_received_at"] = now
@@ -231,6 +277,9 @@ class TelemetryService:
             self.acceleration_history = deque(maxlen=candidate.history_limit)
             self.ranges_m = []
             self.sequence = None
+            self.imu_sequence = None
+            for parser in (self.uwb_parser, self.imu_parser, self.bridge_parser):
+                parser.buffer.clear()
             for channel in self.connections:
                 self.connections[channel] = _connection()
             self.publish()
@@ -248,7 +297,10 @@ class TelemetryService:
         async with self._control_lock:
             if self.source_mode == "simulation":
                 raise ValueError("stop simulation before connecting hardware")
-            devices = devices or [name for name, settings in self.config.serial.items() if settings.port]
+            bridge = self.config.imu_transport == "uwb_bridge_v1"
+            if bridge and devices is not None and (len(devices) != 2 or set(devices) != {"uwb", "imu"}):
+                raise ValueError("bridge mode connects uwb and imu together through A1")
+            devices = ["uwb"] if bridge else devices or [name for name, settings in self.config.serial.items() if settings.port]
             if not devices or len(set(devices)) != len(devices) or any(n not in self.connections for n in devices):
                 raise ValueError("configure a UART port and select uwb and/or imu")
             settings = {name: self.config.serial[name] for name in devices}
@@ -258,7 +310,7 @@ class TelemetryService:
                     raise ValueError(f"{name} port is not configured")
                 if self._serial_factory is None:
                     self._validate_port(parameters.port)
-                if any(state["state"] == "connected" and state["port"] == parameters.port
+                if not bridge and any(state["state"] == "connected" and state["port"] == parameters.port
                        for other, state in self.connections.items() if other != name):
                     raise ValueError("each telemetry channel must use a distinct UART")
             if len({p.port for p in settings.values()}) != len(settings):
@@ -273,6 +325,8 @@ class TelemetryService:
                     continue
                 self.connections[name].update(state="connecting", port=parameters.port, last_error=None,
                                                last_received_at=None, last_valid_at=None)
+                if bridge:
+                    self.connections["imu"] = copy.deepcopy(self.connections[name])
                 try:
                     factory = self._serial_factory
                     if factory is None:
@@ -284,12 +338,20 @@ class TelemetryService:
                     if name == "uwb":
                         self.sequence = None
                         self.uwb_parser.buffer.clear()
+                        self.bridge_parser.buffer.clear()
+                        if bridge:
+                            self.imu_sequence = None
+                            self.imu_parser.buffer.clear()
                     else:
                         self.imu_parser.buffer.clear()
                     self.connections[name]["state"] = "connected"
+                    if bridge:
+                        self.connections["imu"]["state"] = "connected"
                     self._tasks[name] = asyncio.create_task(self._serial_reader(name, handle))
                 except Exception as error:
                     self.connections[name].update(state="error", last_error=f"{type(error).__name__}: {error}")
+                    if bridge:
+                        self.connections["imu"].update(state="error", last_error=self.connections[name]["last_error"])
             self.publish()
             return self.snapshot()
 
@@ -303,6 +365,8 @@ class TelemetryService:
             raise
         except Exception as error:
             self.connections[name].update(state="error", last_error=f"{type(error).__name__}: {error}")
+            if self.config.imu_transport == "uwb_bridge_v1":
+                self.connections["imu"].update(state="error", last_error=self.connections[name]["last_error"])
             self.publish()
         finally:
             with suppress(Exception):
@@ -321,8 +385,10 @@ class TelemetryService:
             state["state"] = "disconnected"
         self.source_mode = "idle"
         self.sequence = None
+        self.imu_sequence = None
         self.uwb_parser.buffer.clear()
         self.imu_parser.buffer.clear()
+        self.bridge_parser.buffer.clear()
 
     async def disconnect(self) -> dict:
         async with self._control_lock:

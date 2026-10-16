@@ -155,6 +155,8 @@ curl --fail http://127.0.0.1:8010/api/health
 
 ## 5. 最短排查顺序
 
+上述是默认独立 USB 接法。实验性的 [标签 STM32 / UWB 桥接模式](hardware/IMU_UWB_BRIDGE.md) 只需把 A1 的 USB attach 到 WSL；但它需要尚未完成的自定义标签/A1 固件。不能因为页面能切换就把 IMU 插到标签上当作已经可用。
+
 | 现象 | 检查 |
 | --- | --- |
 | 找不到后端 Python | 是否在 WSL 创建 `.venv`，或设置了正确的 `SHOWCASE_PYTHON`；不要指向 Windows `.exe` 或旧云端目录 |

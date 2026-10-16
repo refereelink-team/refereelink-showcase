@@ -28,6 +28,8 @@ The six paired-camera field cases are distributed as a separate Google Drive ZIP
 For BP-TWR-30 firmware selection, wiring, Linux backend serial placement and physical acceptance, follow the [TWR-30 setup guide](docs/hardware/TWR30_SETUP.md). UWB-only operation does not require an IMU port.
 For the current Yahboom 6/9/10-axis module, follow the [IMU setup guide](docs/hardware/IMU_SETUP.md). Only sensor-axis acceleration including gravity is displayed; attitude and IMU/UWB fusion are not implemented.
 
+The device panel supports two explicit IMU transports: independent USB (default) and experimental tag-STM32/UWB bridging via A1's single UART. The host parser and portable C codec are implemented; the required tag/A1 firmware integration and flashable HEX are **not**. Stock Location firmware cannot forward IMU. See the [wiring, custom protocol and staged bridge plan](docs/hardware/IMU_UWB_BRIDGE.md). Disconnect before changing transport; simulation remains separate.
+
 ## Repository boundaries
 
 ```text
