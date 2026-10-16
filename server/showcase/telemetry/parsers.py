@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import binascii
 import math
 import struct
 
@@ -116,6 +117,73 @@ class IMUParser(BufferedParser):
             xyz = tuple(v * 16.0 / 32767.0 * STANDARD_GRAVITY for v in raw)
             frames.append(AccelerationFrame(*xyz, raw))
         return frames
+
+
+@dataclass(frozen=True)
+class BridgedIMUFrame:
+    tag_id: int
+    sequence: int
+    sample_ms: int
+    payload: bytes
+
+
+class BridgeParser(BufferedParser):
+    """Custom RL bridge v1, not vendor firmware: atomic mr/mi stream demultiplexing."""
+    header = b"mi"
+    frame_length = 36
+
+    def feed(self, data: bytes) -> list[bytes | BridgedIMUFrame]:
+        self.append(data)
+        frames: list[bytes | BridgedIMUFrame] = []
+        while self.buffer:
+            indices = [i for h in (b"mr", b"mi") if (i := self.buffer.find(h)) >= 0]
+            if not indices:
+                del self.buffer[:-1]
+                break
+            del self.buffer[:min(indices)]
+            if len(self.buffer) < 3:
+                break
+            uwb = self.buffer[:2] == b"mr"
+            if uwb and self.buffer[2] != 2:
+                self.reject("invalid_bridge_version")
+                del self.buffer[0]
+                continue
+            length = 16 if uwb else self.frame_length
+            if len(self.buffer) < length:
+                break
+            candidate = bytes(self.buffer[:length])
+            if uwb:
+                if candidate[-2:] not in (b"\r\n", b"\n\r"):
+                    self.reject("invalid_bridge_uwb_framing")
+                    del self.buffer[0]
+                    continue
+                frames.append(candidate)
+            else:
+                if candidate[2] != 1:
+                    self.reject("invalid_bridge_version")
+                    del self.buffer[:length]
+                    continue
+                if candidate[10] != 23:
+                    self.reject("invalid_bridge_payload_length")
+                    del self.buffer[:length]
+                    continue
+                if binascii.crc_hqx(candidate[:-2], 0xffff) != int.from_bytes(candidate[-2:], "little"):
+                    self.reject("bridge_bad_crc")
+                    # Never reinterpret an IMU payload as an embedded legacy mr frame.
+                    del self.buffer[:length]
+                    continue
+                sequence, sample_ms = struct.unpack_from("<HI", candidate, 4)
+                frames.append(BridgedIMUFrame(candidate[3], sequence, sample_ms, candidate[11:34]))
+            del self.buffer[:length]
+        return frames
+
+
+def encode_bridge_imu(tag_id: int, sequence: int, sample_ms: int, payload: bytes) -> bytes:
+    """Synthetic fixture/reference encoder; not evidence of a working radio link."""
+    if len(payload) != 23:
+        raise ValueError("bridge requires one 23-byte Yahboom raw frame")
+    data = b"mi\x01" + bytes([tag_id]) + struct.pack("<HI", sequence, sample_ms) + b"\x17" + payload
+    return data + struct.pack("<H", binascii.crc_hqx(data, 0xffff))
 
 
 def trilaterate(anchors: list[dict], ranges_m: tuple[float, float, float],

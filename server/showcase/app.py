@@ -35,9 +35,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         if settings.enforce_cuda:
-            import torch
+            try:
+                import torch
+            except ImportError as exc:
+                raise RuntimeError(
+                    'Showcase backend requires CUDA-enabled PyTorch in its Python environment. '
+                    'Install it on the local WSL2/Linux or remote CUDA host; CPU fallback is disabled.'
+                ) from exc
             if not torch.cuda.is_available():
-                raise RuntimeError('Showcase backend must run on the remote CUDA host')
+                raise RuntimeError(
+                    'Showcase backend requires an available CUDA device on this host. '
+                    'For local WSL2, check the Windows NVIDIA driver and CUDA-enabled PyTorch; '
+                    'CPU fallback is disabled.'
+                )
             gpu.update(device='cuda', cuda_available=True, gpu_name=torch.cuda.get_device_name())
         telemetry = getattr(app.state, 'telemetry', None)
         if telemetry is not None:

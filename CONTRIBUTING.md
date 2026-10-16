@@ -20,11 +20,11 @@ npm run format:check
 npm run build
 ```
 
-For client development, copy `web/.env.example` to ignored `web/.env.local`, set `BACKEND_URL` to your remote CUDA server and run `npm run dev`.
+For client development, run `npm run dev` in the same WSL2/Linux instance as the backend. The default target is `http://127.0.0.1:8010`. An ignored `web/.env.local` or shell `BACKEND_URL` can override it for an explicit remote deployment. See [local WSL setup](docs/LOCAL_WSL.md).
 
-## Remote Linux API checks
+## Linux / WSL2 API checks
 
-Run Python checks on the remote Linux host, not the local presentation Mac. In an isolated Python 3.12+ virtual environment:
+Run Python checks on Linux, including the local WSL2 Ubuntu host, not a presentation Mac. In an isolated Python 3.12+ virtual environment:
 
 ```sh
 python -m pip install -c requirements-ci.txt -e '.[test]' ruff
@@ -34,6 +34,6 @@ python -m pytest -q -m 'not cuda'
 
 These tests exercise the API, process cleanup, synthetic UART frames and Linux PTYs. They do not require or prove actual inference. Hosted CI uses this suite.
 
-On the remote CUDA machine with compatible PyTorch installed, run the full suite with `python -m pytest -q`. The `cuda` test verifies an actual CUDA device; production startup fails when CUDA is unavailable. Model runs additionally require separately obtained checkpoints, authorized media, calibration and the upstream VARS implementation documented in `backend_core/SOURCE.md`. Never substitute CPU or scripted output for a real-model result.
+On the actual CUDA machine (local WSL2 or remote Linux) with compatible PyTorch installed, run the full suite with `python -m pytest -q`. The `cuda` test verifies an actual CUDA device; production startup fails when CUDA is unavailable. Model runs additionally require separately obtained checkpoints, authorized media, calibration and the upstream VARS implementation documented in `backend_core/SOURCE.md`. Never substitute CPU or scripted output for a real-model result.
 
 Before changing extracted model code, retain source attribution and update its manifest and documented validation deliberately. For UART or board changes, identify the exact device/protocol and distinguish software tests from physical acceptance.

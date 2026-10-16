@@ -1,13 +1,16 @@
 # RefereeLink Showcase
 
-A focused, four-page workspace for live demonstrations: multi-view refereeing, player tracking and team classification with pitch projection, foul candidates, and football UWB/IMU telemetry. The React interface uses browser-style tabs. All Python services and model inference run on a remote CUDA host; the presentation Mac runs only the frontend.
+A focused, four-page workspace for live demonstrations: multi-view refereeing, player tracking and team classification with pitch projection, foul candidates, and football UWB/IMU telemetry. The React interface uses browser-style tabs. The default deployment runs both frontend and Python/CUDA backend on **one PC in WSL2 Ubuntu**, with the UI opened in the Windows browser. A remote Linux CUDA backend remains optional; no cloud host or Mac is required.
 
 ## Deployment layout
 
-- Remote showcase: `http://<cuda-host>:8010/`. Replace the placeholder with your CUDA host.
-- Local frontend: `http://localhost:5174/`. Vite proxies `/api`, `/media`, and `/ws` to the remote service on port 8010.
-- Remote user service: configure the paths in `refereelink-showcase.service`, then enable it with `systemctl --user enable --now refereelink-showcase.service`.
-- The original device-ingest service remains on remote port 8000. The showcase reuses its camera and phone inputs, prepared cases, and human-review APIs.
+- Local showcase: port **8010**, bound to loopback by default. After building the frontend, this backend serves both the UI and API.
+- Optional frontend development server: port **5174**, in the same WSL instance. Vite proxies `/api`, `/media`, and `/ws` to `http://127.0.0.1:8010` unless `BACKEND_URL` explicitly overrides it.
+- USB: A1's USB-to-UART adapter and the IMU data cable plug into the same PC, then attach to WSL via `usbipd-win`. The backend uses Linux `/dev/…` paths, not Windows COM names. A2/A3 and the ball-internal tag only need power.
+- The original multi-view/device-ingest service is a **separate dependency** on local port **8000**. Run it locally for camera/phone inputs, prepared multi-view cases and review APIs. Its full server is not bundled here; there is no automatic cloud fallback.
+- Optional user service: edit the checkout paths in `deploy/refereelink-showcase.service` before enabling it. WSL systemd is not required for foreground startup.
+
+Follow the self-contained [single-PC WSL2 CUDA setup and USB checklist](docs/LOCAL_WSL.md). CUDA-enabled PyTorch, authorized weights, media, calibration and external model code must also be installed on the PC; moving only the Git checkout is insufficient. Real-model startup still refuses unavailable CUDA and never silently falls back to CPU.
 
 The [software validation record](docs/VALIDATION.md) summarizes 12 real CUDA ablation runs across four supplied videos. Full reports, organized data, and output videos remain in the original backend's `docs/night-validation-20261002/` and `assets/validation/20261002/ablation/` directories. These assets are not distributed with this repository; obtain authorized runtime assets separately. Model weights, media, and calibration bundles stay outside Git.
 
@@ -25,6 +28,8 @@ The six paired-camera field cases are distributed as a separate Google Drive ZIP
 For BP-TWR-30 firmware selection, wiring, Linux backend serial placement and physical acceptance, follow the [TWR-30 setup guide](docs/hardware/TWR30_SETUP.md). UWB-only operation does not require an IMU port.
 For the current Yahboom 6/9/10-axis module, follow the [IMU setup guide](docs/hardware/IMU_SETUP.md). Only sensor-axis acceleration including gravity is displayed; attitude and IMU/UWB fusion are not implemented.
 
+The device panel supports two explicit IMU transports: independent USB (default) and experimental tag-STM32/UWB bridging via A1's single UART. The host parser and portable C codec are implemented; the required tag/A1 firmware integration and flashable HEX are **not**. Stock Location firmware cannot forward IMU. See the [wiring, custom protocol and staged bridge plan](docs/hardware/IMU_UWB_BRIDGE.md). Disconnect before changing transport; simulation remains separate.
+
 ## Repository boundaries
 
 ```text
@@ -38,35 +43,38 @@ docs/hardware/            Vendor sources, protocols, and software validation
 
 `backend_core` retains source attribution and exact commit identifiers. A real job was validated in Python's isolated `-I` mode: all 56 loaded app/tools modules came from the extracted core, with no imports from the temporary night-validation checkout. See [SOURCE.md](backend_core/SOURCE.md) and [VALIDATION.md](backend_core/VALIDATION.md) for provenance and strict checkpoint validation. The original full dashboard, administrator APIs, web application, and device SRT service are not copied into this repository.
 
-## Local frontend
+## Local startup (WSL2 Ubuntu)
 
 Node.js 22.12 or newer is required. CI uses Node.js 24; see `.nvmrc`.
 
 ```bash
 cd refereelink-showcase
+# First prepare .venv with Python 3.12+, CUDA-enabled PyTorch and the runtime
+# dependencies/assets described in docs/LOCAL_WSL.md.
 npm ci
-cp web/.env.example web/.env.local
-# Set BACKEND_URL in web/.env.local to your remote CUDA showcase service.
-npm run dev
+npm run build
+npm run start:backend
 ```
 
-The default port is 5174. Development requires `BACKEND_URL` in `web/.env.local` or the launch environment. Static builds do not require a backend connection. You can override the remote target by setting `BACKEND_URL` before starting Vite; `web/vite.config.ts` defines the configuration. Client checks such as `npm run lint`, `npm test`, and `npm run build` may run on the Mac. Do not start the Python backend or model inference there.
+The startup command uses `.venv/bin/python`, or an absolute interpreter path in `SHOWCASE_PYTHON`, and optionally loads the ignored `deploy/showcase.env`. Relative runtime defaults follow the checkout, not `/srv` or a previous cloud machine. Open the local service in the Windows browser via WSL localhost forwarding. This is the shortest presentation path: one backend process serves the built frontend too.
+
+For frontend development, run `npm run dev` in a second WSL terminal. No environment file is required: Vite defaults to the local backend. Remove or update old remote `BACKEND_URL`/`LIVE_BACKEND_URL` entries in `web/.env.local` or the shell; explicit overrides still win. To keep a remote deployment, set `BACKEND_URL` to its address. Client-only checks may still run on macOS; macOS backend/CUDA inference is not supported by this deployment.
 
 ## Software checks and contributions
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and validation commands. CI checks frontend types, tests, formatting, and builds, together with Linux API/serial software tests and extracted-source hashes. Hosted CI does not perform real GPU inference or physical-device acceptance. See [SECURITY.md](SECURITY.md) for deployment boundaries and private vulnerability reporting.
 
-## Remote backend
+## CUDA backend (local by default)
 
 On the CUDA Linux host, install Python 3.12 or newer, GPU-compatible PyTorch and TorchVision, FFmpeg/ffprobe, and the project dependencies. Model dependencies are listed in `backend_core/requirements-inference.txt`; the tested environment is recorded in `backend_core/runtime-environment.json`. The upstream VARS implementation and its checkpoint are separate runtime assets and are not redistributed here.
 
 ```bash
 python -m pip install -e '.[test]'
 python -m pip install -r backend_core/requirements-inference.txt
-python -m uvicorn showcase.app:app --app-dir server --host 0.0.0.0 --port 8010
+python -m uvicorn showcase.app:app --app-dir server --host 127.0.0.1 --port 8010
 ```
 
-Run these commands only on the remote CUDA host. Production startup checks `torch.cuda.is_available()` and fails if CUDA is unavailable. Use a single Uvicorn worker: that process owns both serial readers and the GPU queue.
+Run these commands on the backend's Linux CUDA host, by default the local PC's WSL2 Ubuntu. Production startup checks `torch.cuda.is_available()` and fails if CUDA is unavailable. Use a single Uvicorn worker: that process owns both serial readers and the GPU queue. The manual Uvicorn command does not load `deploy/showcase.env`; use `npm run start:backend` to load that optional configuration automatically.
 
 Model subprocesses use the backend's Python executable by default. Set `SHOWCASE_CORE_PYTHON` to use another CUDA environment. Runtime assets default to the repository's `runtime/` directory; existing deployments should explicitly configure their asset paths in the ignored `deploy/showcase.env` file. Configuration variables are listed in [deploy/showcase.env.example](deploy/showcase.env.example), and the user-service template is [deploy/refereelink-showcase.service](deploy/refereelink-showcase.service). Match the paths to your deployment. Example serial-port names are not evidence that hardware has been discovered.
 

@@ -31,3 +31,17 @@ Example configuration for actual devices after identifying stable USB paths:
 ```
 
 These are example identifiers, never automatically selected or connected. Serial control endpoints should remain on the user-authorized private showcase network with the application's origin/access policy. The telemetry module does not configure system permissions or firmware, and does not enable arbitrary network serial bridges.
+
+## Switchable IMU transport (additive v1 fields)
+
+`config.imu_transport` defaults to `usb`; `uwb_bridge_v1` selects the custom experimental [bridge protocol](IMU_UWB_BRIDGE.md). Configure only while idle. Bridge configuration requires `serial.imu.port=null`, A1 at 115200 baud, and a configured `serial.uwb.port` before connecting. Example patch:
+
+```json
+{"imu_transport":"uwb_bridge_v1","serial":{"uwb":{"port":"/dev/ttyUSB0","baudrate":115200},"imu":{"port":null}}}
+```
+
+Bridge `connect` accepts no device selection or both `["uwb","imu"]`; partial/empty selections are rejected. It opens **one** physical A1 handle/reader. Both logical connection records name that port, share open/read errors, and disconnect together. Their `last_valid_at`, stale flags, sequences and data histories remain independent. Default USB still refuses sharing a port. Transport changes clear histories, sample sequences and partial buffers; reconnect resets sequences/buffers. Mode is in-memory, not persistent across backend restarts.
+
+An additive `transport` object exposes `imu`, `firmware_required`, `bridge_protocol`, envelope `rejected_frames` and `last_rejection`. A bridged acceleration additionally carries `tag_id`, `sequence`, `sample_ms` and `transport`; its ordinary `timestamp` remains host receive time. The tag clock is not synchronized media time. The default per-channel protocol names still describe the inner vendor frames. CRC/version/length errors belong to envelope diagnostics; wrong-tag/duplicate/bad-inner-frame errors belong to IMU diagnostics.
+
+Stock `mr` alone never makes bridged IMU valid; no automatic fallback to USB, simulation or invented acceleration occurs. Firmware-required remains true even when test packets arrive: it is a prerequisite, not a physical-acceptance flag. `hardware_verified=false` is unchanged. Explicit demo replay uses existing synthetic vendor parsers, not evidence of an implemented wireless bridge.
