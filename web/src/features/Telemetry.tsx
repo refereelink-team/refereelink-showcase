@@ -6,7 +6,7 @@ import { Alert, Empty, Footer, Modes, PageHeader } from '../components/UI';
 const states: Record<string, string> = {
   disconnected: '未连接',
   connecting: '连接中',
-  connected: '已接收',
+  connected: '串口已打开',
   error: '连接错误',
   simulation: '演示回放',
 };
@@ -142,6 +142,7 @@ export default function Telemetry() {
     [anchors, setAnchors] = useState<Anchor[]>([]),
     [uwbPort, setUwbPort] = useState(''),
     [imuPort, setImuPort] = useState(''),
+    [tagId, setTagId] = useState(5),
     [configured, setConfigured] = useState(false),
     [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
@@ -149,6 +150,7 @@ export default function Telemetry() {
       setAnchors(telemetry.data.config.anchors);
       setUwbPort(telemetry.data.config.serial.uwb.port || '');
       setImuPort(telemetry.data.config.serial.imu.port || '');
+      setTagId(telemetry.data.config.tag_id);
       setConfigured(true);
     }
   }, [telemetry.data, configured]);
@@ -164,6 +166,7 @@ export default function Telemetry() {
     const result = await action.run(() =>
       api.telemetryConfig({
         anchors,
+        tag_id: tagId,
         serial: {
           uwb: { port: uwbPort || null, baudrate: 115200 },
           imu: { port: imuPort || null, baudrate: 115200 },
@@ -174,18 +177,11 @@ export default function Telemetry() {
       telemetry.setData(result);
       setNotice('配置已保存');
     }
+    return result;
   }
   async function connect() {
-    const config = await action.run(() =>
-      api.telemetryConfig({
-        serial: {
-          uwb: { port: uwbPort || null, baudrate: 115200 },
-          imu: { port: imuPort || null, baudrate: 115200 },
-        },
-      }),
-    );
+    const config = await save();
     if (config) {
-      telemetry.setData(config);
       await command('connect');
     }
   }
@@ -267,15 +263,36 @@ export default function Telemetry() {
                   snapshot.connections[kind].stale
                     ? ' · 数据过期'
                     : ''}
+                  {snapshot?.connections[kind].state === 'connected' &&
+                  !snapshot.connections[kind].stale
+                    ? ' · 有效数据'
+                    : ''}
                 </span>
               </div>
             ))}
             {mode === 'device' && (
               <div className="port-fields">
                 <label className="field">
+                  <span>标签 ID（十进制，默认 5 / 0x05）</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="255"
+                    step="1"
+                    value={tagId}
+                    disabled={action.busy || snapshot?.source_mode !== 'idle'}
+                    onChange={(e) => setTagId(Number(e.target.value))}
+                  />
+                </label>
+                <p className="quiet">
+                  BP-TWR-30：连接 0x0001 基站，115200 / 8N1。填写运行后端的 Linux 主机串口路径；仅用
+                  UWB 时，IMU 留空。
+                </p>
+                <label className="field">
                   <span>UWB 串口</span>
                   <input
                     value={uwbPort}
+                    disabled={action.busy || snapshot?.source_mode !== 'idle'}
                     placeholder="串口路径"
                     onChange={(e) => setUwbPort(e.target.value)}
                   />
@@ -284,10 +301,15 @@ export default function Telemetry() {
                   <span>IMU 串口</span>
                   <input
                     value={imuPort}
+                    disabled={action.busy || snapshot?.source_mode !== 'idle'}
                     placeholder="串口路径"
                     onChange={(e) => setImuPort(e.target.value)}
                   />
                 </label>
+                <p className="quiet">
+                  Yahboom IMU：115200 / 8N1，7E 23
+                  协议；当前仅显示含重力的传感器轴加速度，不显示姿态角。
+                </p>
               </div>
             )}
             <button
@@ -311,9 +333,20 @@ export default function Telemetry() {
                   </p>
                 ),
             )}
+            {snapshot &&
+              (['uwb', 'imu'] as const).map((kind) => (
+                <p key={kind} className="quiet">
+                  {kind.toUpperCase()} 累计拒帧：{snapshot[kind].rejected_frames}
+                  {snapshot[kind].last_rejection && ` · 最近原因：${snapshot[kind].last_rejection}`}
+                </p>
+              ))}
           </section>
           <section>
             <h2>锚点坐标</h2>
+            <p className="quiet">
+              A1 / A2 / A3 对应 0x0001 / 0x0002 /
+              0x0003；基站与标签须同高。当前仅三基站二维定位，不测量高度。
+            </p>
             <table className="anchor-table">
               <thead>
                 <tr>
@@ -333,6 +366,7 @@ export default function Telemetry() {
                           step="0.1"
                           aria-label={`A${i + 1} ${axis === 'x_m' ? 'X' : 'Y'}坐标`}
                           value={a[axis]}
+                          disabled={action.busy || snapshot?.source_mode !== 'idle'}
                           onChange={(e) =>
                             setAnchors((all) =>
                               all.map((anchor, index) =>

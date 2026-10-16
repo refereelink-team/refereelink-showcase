@@ -75,10 +75,8 @@ class UWBParser(BufferedParser):
                 continue
             del self.buffer[:16]
             tag = candidate[3]
-            sequence, d0, d1, d2, d3 = struct.unpack_from("<5H", candidate, 4)
-            if d3 != d0:
-                self.reject("expected_three_anchor_duplicate")
-                continue
+            # Only anchors 0001..0003 are configured; the host guide permits ignoring Dis3.
+            sequence, d0, d1, d2 = struct.unpack_from("<4H", candidate, 4)
             ranges = (d0 * 0.01, d1 * 0.01, d2 * 0.01)
             if not all(self.minimum_range_m <= d <= self.maximum_range_m for d in ranges):
                 self.reject("uwb_range_out_of_bounds")

@@ -187,12 +187,12 @@ class TelemetryService:
                 if self.sequence is not None and not 0 < ((frame.sequence - self.sequence) & 0xffff) < 0x8000:
                     self._reject(channel, "duplicate_or_out_of_order_sequence")
                     continue
-                self.sequence = frame.sequence
                 try:
                     position = trilaterate(self.config.model_dump()["anchors"], frame.ranges_m, self.config.maximum_residual_m)
                 except ValueError as error:
                     self._reject(channel, str(error))
                     continue
+                self.sequence = frame.sequence
                 position.update(tag_id=frame.tag_id, sequence=frame.sequence, timestamp=now,
                                 source_mode=self.source_mode, z_m=self.config.plane_height_m)
                 self.position_history.append(position)
