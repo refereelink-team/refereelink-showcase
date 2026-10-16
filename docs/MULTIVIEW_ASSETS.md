@@ -39,7 +39,7 @@ runtime/media/multiview/
 
 前端目前仅展示原案例 1、2、5，并重新编号为实地测试案例 1、2、3。因此网页案例 1、2、3 分别读取 `field-test-01`、`field-test-02`、`field-test-05`。原案例 3、4、6 仅在前端隐藏，完整 ZIP 仍保留六组视频。案例名称和机位同步偏移在 [`cases/multiview-field-tests.json`](../cases/multiview-field-tests.json)；文件大小、SHA-256 和 Drive 位置在 [`cases/multiview-field-tests-asset-bundle.json`](../cases/multiview-field-tests-asset-bundle.json)。
 
-Mac 的网页通过 `BACKEND_URL` 读取远端 API 和视频。恢复远端素材时，请在 **CUDA 主机的 showcase 仓库根目录** 执行同一条解压命令；仅在 Mac 解压不会改变远端服务使用的文件。当前已配置的上游案例服务继续提供案例目录与推理。这个 ZIP 恢复媒体文件，不安装模型或注册新的上游服务；新部署时应让上游案例目录按 showcase 仓库根目录解析上述相对路径。无需将 Backend 源码复制进 showcase。
+默认部署为同一台 PC：在 **WSL2 Ubuntu 的 showcase 仓库根目录** 解压，再由该 WSL 后端提供 API 和视频，Windows 浏览器展示。本地上游案例服务也需按 showcase 仓库根目录解析上述相对路径。这个 ZIP 只恢复媒体文件，不安装模型或注册上游服务；新 PC 仍需单独部署案例/多视角服务。若显式选择远端 CUDA 后端，必须在远端后端实际使用的目录解压，仅在浏览器电脑解压无效。无需将 Backend 源码复制进 showcase。
 
 ## 可选：核对文件完整性
 

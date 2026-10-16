@@ -1,13 +1,11 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
-export default defineConfig(({ command, mode }) => {
+export default defineConfig(({ mode }) => {
   const root = fileURLToPath(new URL('.', import.meta.url));
   const env = loadEnv(mode, root, ['BACKEND_', 'LIVE_BACKEND_']);
   const liveTarget = process.env.LIVE_BACKEND_URL || env.LIVE_BACKEND_URL;
-  const target = process.env.BACKEND_URL || env.BACKEND_URL;
-  if (command === 'serve' && !target)
-    throw new Error('Set BACKEND_URL to the remote CUDA showcase server.');
+  const target = process.env.BACKEND_URL || env.BACKEND_URL || 'http://127.0.0.1:8010';
   return {
     root,
     plugins: [react()],

@@ -80,7 +80,7 @@ def test_restart_marks_interrupted_jobs_failed(settings):
 
 
 @pytest.mark.cuda
-def test_health_reports_real_cuda_on_remote_host(settings):
+def test_health_reports_real_cuda_on_backend_host(settings):
     import torch
     assert torch.cuda.is_available(), 'This backend test must run on the CUDA machine'
     app = create_app(replace(settings, enforce_cuda=True))

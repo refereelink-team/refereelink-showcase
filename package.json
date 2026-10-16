@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "start:backend": "bash deploy/start-local.sh",
     "dev": "vite --config web/vite.config.ts",
     "dev:web": "vite --config web/vite.config.ts",
     "build": "tsc -p web/tsconfig.json && vite build --config web/vite.config.ts",

@@ -112,7 +112,7 @@ export function LiveInputs({ onCapture }: { onCapture?: (id: string) => void }) 
       {!live.data && <Empty>{live.loading ? '正在读取现场状态…' : '现场服务不可用'}</Empty>}
       {live.data?.phone?.video_transport === 'rtsp' && (
         <p className="quiet">
-          手机、摄像头与 Mac 接同一交换机。手机使用 RefereeLink App 有线
+          手机、摄像头与运行接收服务的电脑接同一交换机。手机使用 RefereeLink App 有线
           RTSP；位姿与本地离线录制保留。
         </p>
       )}

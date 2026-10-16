@@ -37,8 +37,8 @@ these notices grant no redistribution rights to those assets.
 
 ## Runtime
 
-All Python execution and inference belong on the remote CUDA host. The runner
-refuses CPU inference. Install the direct dependencies in
+Python execution and inference run on a Linux CUDA host, by default the local PC's
+WSL2 Ubuntu; a remote CUDA host is optional. The runner refuses CPU inference. Install the direct dependencies in
 `requirements-inference.txt` using a CUDA-compatible PyTorch index/runtime; the
 tested package versions are recorded in `runtime-environment.json`. FFmpeg and
 ffprobe must be on PATH.
